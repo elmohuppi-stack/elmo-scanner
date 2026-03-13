@@ -1,0 +1,17 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "brew": true,
+    "docker compose": true,
+    "docker run": true,
+    "id": true,
+    "test": true,
+    "/^cd /Users/elmarhepp/workspace/elmo-scanner/backend && command -v php >/dev/null 2>&1 && php -v \\| head -n 1 \\|\\| echo \"php:not_found\"; command -v php >/dev/null 2>&1 && php -m \\| rg -n \"pdo_pgsql\\|pgsql\" \\|\\| true$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^php artisan migrate:status$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
+}
