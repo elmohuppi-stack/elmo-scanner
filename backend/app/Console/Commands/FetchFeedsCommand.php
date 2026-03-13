@@ -7,6 +7,7 @@ use App\Models\Feed;
 use Illuminate\Support\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Database\Eloquent\Builder;
 
 class FetchFeedsCommand extends Command
 {
@@ -89,12 +90,20 @@ class FetchFeedsCommand extends Command
                     continue;
                 }
 
-                Article::updateOrCreate(
-                    [
-                        'feed_id' => $feed->id,
+                $existingArticle = Article::query()
+                    ->where('feed_id', $feed->id)
+                    ->where(function (Builder $query) use ($articleData) {
+                        $query->where('url', $articleData['url']);
+
+                        if (! empty($articleData['guid'])) {
+                            $query->orWhere('guid', $articleData['guid']);
+                        }
+                    })
+                    ->first();
+
+                if ($existingArticle) {
+                    $existingArticle->fill([
                         'url' => $articleData['url'],
-                    ],
-                    [
                         'title' => $articleData['title'],
                         'guid' => $articleData['guid'],
                         'summary' => $articleData['summary'],
@@ -103,8 +112,22 @@ class FetchFeedsCommand extends Command
                         'image_url' => $articleData['image_url'],
                         'categories' => $articleData['categories'],
                         'content_hash' => $articleData['content_hash'],
-                    ]
-                );
+                    ]);
+                    $existingArticle->save();
+                } else {
+                    Article::create([
+                        'feed_id' => $feed->id,
+                        'url' => $articleData['url'],
+                        'title' => $articleData['title'],
+                        'guid' => $articleData['guid'],
+                        'summary' => $articleData['summary'],
+                        'published_at' => $articleData['published_at'],
+                        'author' => $articleData['author'],
+                        'image_url' => $articleData['image_url'],
+                        'categories' => $articleData['categories'],
+                        'content_hash' => $articleData['content_hash'],
+                    ]);
+                }
 
                 $saved++;
             }
