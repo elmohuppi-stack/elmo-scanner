@@ -17,6 +17,7 @@ help:
 	@echo "  make migrate          - Run Laravel migrations"
 	@echo "  make seed             - Seed predefined RSS feeds"
 	@echo "  make fetch            - Run one RSS fetch pass"
+	@echo "  make dev              - Start backend and frontend together"
 	@echo "  make backend-dev      - Start Laravel API on :8000"
 	@echo "  make frontend-dev     - Start Vue dev server on :5173"
 	@echo "  make test             - Run Laravel tests"
@@ -64,6 +65,17 @@ fetch:
 .PHONY: setup
 setup: db-up backend-install frontend-install keygen migrate seed
 	@echo "Local setup completed."
+
+.PHONY: dev
+dev:
+	@set -e; \
+	cleanup() { \
+		for pid in $$(jobs -p); do kill $$pid 2>/dev/null || true; done; \
+	}; \
+	trap cleanup INT TERM EXIT; \
+	(cd "$(BACKEND_DIR)" && php artisan serve --host=127.0.0.1 --port=8000) & \
+	(cd "$(FRONTEND_DIR)" && npm run dev -- --host 127.0.0.1 --port 5173) & \
+	wait
 
 .PHONY: backend-dev
 backend-dev:

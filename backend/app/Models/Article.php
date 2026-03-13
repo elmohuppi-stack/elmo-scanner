@@ -16,6 +16,7 @@ class Article extends Model
         'published_at',
         'author',
         'image_url',
+        'categories',
         'content_hash',
     ];
 
@@ -23,6 +24,7 @@ class Article extends Model
     {
         return [
             'published_at' => 'datetime',
+            'categories' => 'array',
         ];
     }
 

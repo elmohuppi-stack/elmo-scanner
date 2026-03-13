@@ -101,6 +101,7 @@ class FetchFeedsCommand extends Command
                         'published_at' => $articleData['published_at'],
                         'author' => $articleData['author'],
                         'image_url' => $articleData['image_url'],
+                        'categories' => $articleData['categories'],
                         'content_hash' => $articleData['content_hash'],
                     ]
                 );
@@ -148,11 +149,23 @@ class FetchFeedsCommand extends Command
     private function extractItems(\SimpleXMLElement $xml): array
     {
         if (isset($xml->channel->item)) {
-            return iterator_to_array($xml->channel->item);
+            $items = [];
+
+            foreach ($xml->channel->item as $item) {
+                $items[] = $item;
+            }
+
+            return $items;
         }
 
         if (isset($xml->entry)) {
-            return iterator_to_array($xml->entry);
+            $items = [];
+
+            foreach ($xml->entry as $item) {
+                $items[] = $item;
+            }
+
+            return $items;
         }
 
         return [];
@@ -160,7 +173,11 @@ class FetchFeedsCommand extends Command
 
     private function normalizeItem(\SimpleXMLElement $item): ?array
     {
-        $title = trim((string) ($item->title ?? 'Untitled'));
+        $title = $this->sanitizeText((string) ($item->title ?? 'Untitled'), 300);
+        if ($title === '') {
+            $title = 'Untitled';
+        }
+
         $url = trim((string) ($item->link ?? ''));
 
         if ($url === '' && isset($item->link)) {
@@ -173,7 +190,15 @@ class FetchFeedsCommand extends Command
         }
 
         $guid = trim((string) ($item->guid ?? $item->id ?? $url));
-        $summary = trim((string) ($item->description ?? $item->summary ?? ''));
+
+        $rawSummary = trim((string) ($item->description ?? $item->summary ?? ''));
+        if ($rawSummary === '') {
+            $content = $item->children('content', true);
+            $rawSummary = trim((string) ($content->encoded ?? ''));
+        }
+        $summary = $this->sanitizeText($rawSummary, 4000);
+        $imageUrl = $this->extractImageUrl($item, $rawSummary);
+        $categories = $this->extractCategories($item);
 
         $publishedRaw = trim((string) ($item->pubDate ?? $item->published ?? $item->updated ?? ''));
         $publishedAt = null;
@@ -194,8 +219,115 @@ class FetchFeedsCommand extends Command
             'summary' => $summary,
             'published_at' => $publishedAt,
             'author' => $author !== '' ? $author : null,
-            'image_url' => null,
+            'image_url' => $imageUrl,
+            'categories' => $categories,
             'content_hash' => hash('sha256', mb_strtolower($guid . '|' . $url . '|' . $title)),
         ];
+    }
+
+    private function extractImageUrl(\SimpleXMLElement $item, string $rawSummary): ?string
+    {
+        if (isset($item->enclosure)) {
+            foreach ($item->enclosure as $enclosure) {
+                $attributes = $enclosure->attributes();
+                $url = trim((string) ($attributes['url'] ?? ''));
+                $type = trim((string) ($attributes['type'] ?? ''));
+                if ($url !== '' && ($type === '' || str_starts_with(mb_strtolower($type), 'image/'))) {
+                    return mb_substr($url, 0, 2048);
+                }
+            }
+        }
+
+        $media = $item->children('media', true);
+        if (isset($media->content)) {
+            foreach ($media->content as $content) {
+                $attributes = $content->attributes();
+                $url = trim((string) ($attributes['url'] ?? ''));
+                $type = trim((string) ($attributes['type'] ?? ''));
+                if ($url !== '' && ($type === '' || str_starts_with(mb_strtolower($type), 'image/'))) {
+                    return mb_substr($url, 0, 2048);
+                }
+            }
+        }
+
+        if (isset($media->thumbnail)) {
+            foreach ($media->thumbnail as $thumbnail) {
+                $attributes = $thumbnail->attributes();
+                $url = trim((string) ($attributes['url'] ?? ''));
+                if ($url !== '') {
+                    return mb_substr($url, 0, 2048);
+                }
+            }
+        }
+
+        if (isset($item->link)) {
+            foreach ($item->link as $link) {
+                $attributes = $link->attributes();
+                $href = trim((string) ($attributes['href'] ?? ''));
+                $rel = mb_strtolower(trim((string) ($attributes['rel'] ?? '')));
+                $type = mb_strtolower(trim((string) ($attributes['type'] ?? '')));
+                if ($href !== '' && ($rel === 'enclosure' || str_starts_with($type, 'image/'))) {
+                    return mb_substr($href, 0, 2048);
+                }
+            }
+        }
+
+        if ($rawSummary !== '' && preg_match('/<img[^>]+src=["\']([^"\']+)["\']/iu', $rawSummary, $matches) === 1) {
+            return mb_substr(trim($matches[1]), 0, 2048);
+        }
+
+        return null;
+    }
+
+    private function extractCategories(\SimpleXMLElement $item): ?array
+    {
+        $categories = [];
+
+        if (isset($item->category)) {
+            foreach ($item->category as $category) {
+                $value = trim((string) $category);
+
+                if ($value === '') {
+                    $attributes = $category->attributes();
+                    $value = trim((string) ($attributes['term'] ?? ''));
+                }
+
+                $value = $this->sanitizeText($value, 80);
+                if ($value !== '') {
+                    $categories[] = $value;
+                }
+            }
+        }
+
+        $dc = $item->children('dc', true);
+        if (isset($dc->subject)) {
+            foreach ($dc->subject as $subject) {
+                $value = $this->sanitizeText((string) $subject, 80);
+                if ($value !== '') {
+                    $categories[] = $value;
+                }
+            }
+        }
+
+        $categories = array_values(array_unique($categories));
+
+        return $categories === [] ? null : $categories;
+    }
+
+    private function sanitizeText(string $value, int $maxLength = 4000): string
+    {
+        if ($value === '') {
+            return '';
+        }
+
+        $decoded = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $plainText = strip_tags($decoded);
+        $normalized = preg_replace('/\s+/u', ' ', trim($plainText));
+
+        if (! is_string($normalized)) {
+            $normalized = trim($plainText);
+        }
+
+        return mb_substr($normalized, 0, $maxLength);
     }
 }
