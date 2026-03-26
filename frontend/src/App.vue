@@ -53,10 +53,22 @@ const deletingFeed = ref(null);
 const fetchingAll = ref(false);
 const searchInputRef = ref(null);
 const theme = ref(resolveInitialTheme());
+const previewItem = ref(null);
+const previewReader = ref(null);
+const previewLoading = ref(false);
+let previewRequestId = 0;
 
 const themeLabel = computed(() =>
   theme.value === "dark" ? "Hellmodus aktivieren" : "Dark Mode aktivieren",
 );
+
+const previewBodyHtml = computed(() => {
+  if (previewReader.value?.html) {
+    return previewReader.value.html;
+  }
+
+  return buildSummaryHtml(previewItem.value?.summary || "");
+});
 
 const form = ref({
   url: "",
@@ -386,8 +398,86 @@ function focusSearch() {
   searchInputRef.value?.focus();
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function buildSummaryHtml(summary) {
+  const normalized = String(summary || "").trim();
+  if (!normalized) {
+    return "<p>Keine Vorschau verfuegbar.</p>";
+  }
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+    .join("");
+}
+
 function toggleTheme() {
   theme.value = theme.value === "dark" ? "light" : "dark";
+}
+
+async function openArticlePreview(item) {
+  previewItem.value = item;
+  previewReader.value = {
+    html: buildSummaryHtml(item.summary || ""),
+    source: "summary",
+    cached: true,
+    error: null,
+  };
+  previewLoading.value = true;
+
+  const requestId = ++previewRequestId;
+
+  try {
+    const article = await apiRequest(`/api/articles/${item.id}`);
+
+    if (requestId !== previewRequestId) {
+      return;
+    }
+
+    previewItem.value = article;
+    previewReader.value = article.reader || previewReader.value;
+  } catch (e) {
+    if (requestId !== previewRequestId) {
+      return;
+    }
+
+    previewReader.value = {
+      ...(previewReader.value || {}),
+      error:
+        e instanceof Error
+          ? e.message
+          : "Vorschau konnte nicht geladen werden.",
+    };
+  } finally {
+    if (requestId === previewRequestId) {
+      previewLoading.value = false;
+    }
+  }
+}
+
+function closeArticlePreview() {
+  previewRequestId += 1;
+  previewItem.value = null;
+  previewReader.value = null;
+  previewLoading.value = false;
+}
+
+function openArticleInNewTab() {
+  if (!previewItem.value?.url) {
+    return;
+  }
+
+  window.open(previewItem.value.url, "_blank", "noopener,noreferrer");
 }
 
 function openEditModal(feed) {
@@ -480,6 +570,11 @@ async function fetchAllFeeds() {
 }
 
 function handleKeydown(e) {
+  if (e.key === "Escape" && previewItem.value) {
+    closeArticlePreview();
+    return;
+  }
+
   if ((e.metaKey || e.ctrlKey) && e.key === "k") {
     e.preventDefault();
     focusSearch();
@@ -513,7 +608,7 @@ onUnmounted(() => {
             :title="themeLabel"
             @click="toggleTheme"
           >
-            <span aria-hidden="true">{{ theme === 'dark' ? '☀' : '☾' }}</span>
+            <span aria-hidden="true">{{ theme === "dark" ? "☀" : "☾" }}</span>
           </button>
         </div>
       </div>
@@ -691,6 +786,7 @@ onUnmounted(() => {
                 :src="item.image_url"
                 :alt="item.title"
                 loading="lazy"
+                @click="openArticlePreview(item)"
               />
 
               <div class="item-body">
@@ -714,9 +810,13 @@ onUnmounted(() => {
                   </ul>
                 </div>
 
-                <a :href="item.url" target="_blank" rel="noreferrer">{{
-                  item.title
-                }}</a>
+                <button
+                  class="item-link"
+                  type="button"
+                  @click="openArticlePreview(item)"
+                >
+                  {{ item.title }}
+                </button>
                 <p v-if="item.summary">{{ item.summary }}</p>
               </div>
             </div>
@@ -774,6 +874,49 @@ onUnmounted(() => {
           <button class="btn-danger" @click="confirmDelete" :disabled="loading">
             {{ loading ? "Löschen..." : "Löschen" }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="previewItem"
+      class="modal-overlay article-preview-overlay"
+      @click="closeArticlePreview"
+    >
+      <div class="modal-content article-preview-modal" @click.stop>
+        <div class="article-preview-head">
+          <div>
+            <div class="article-preview-title-row">
+              <h2>{{ previewItem.title || "Ohne Titel" }}</h2>
+              <button
+                class="article-open-btn"
+                type="button"
+                @click="openArticleInNewTab"
+              >
+                Original öffnen
+              </button>
+              <span class="preview-state">Interne Reader-Ansicht aktiv</span>
+            </div>
+          </div>
+          <button
+            class="preview-close"
+            type="button"
+            @click="closeArticlePreview"
+            aria-label="Vorschau schliessen"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p v-if="previewReader?.error" class="article-preview-notice panel">
+          {{ previewReader.error }}
+        </p>
+
+        <div class="article-reader-shell">
+          <div v-if="previewLoading" class="article-reader-loading panel">
+            Lade Artikeltext...
+          </div>
+          <div class="article-reader-content" v-html="previewBodyHtml" />
         </div>
       </div>
     </div>

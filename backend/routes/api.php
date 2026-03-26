@@ -12,3 +12,4 @@ Route::delete('/feeds/{feed}', [FeedController::class, 'destroy']);
 Route::post('/admin/feeds/{feed}/fetch', [FeedController::class, 'fetch']);
 Route::post('/admin/feeds/fetch-all', [FeedController::class, 'fetchAll']);
 Route::get('/articles', [ArticleController::class, 'index']);
+Route::get('/articles/{article}', [ArticleController::class, 'show']);

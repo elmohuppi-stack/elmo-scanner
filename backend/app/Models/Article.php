@@ -18,6 +18,10 @@ class Article extends Model
         'image_url',
         'categories',
         'content_hash',
+        'reader_html',
+        'reader_text',
+        'reader_extracted_at',
+        'reader_error',
     ];
 
     protected function casts(): array
@@ -25,6 +29,7 @@ class Article extends Model
         return [
             'published_at' => 'datetime',
             'categories' => 'array',
+            'reader_extracted_at' => 'datetime',
         ];
     }
 

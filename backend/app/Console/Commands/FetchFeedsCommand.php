@@ -102,6 +102,17 @@ class FetchFeedsCommand extends Command
                     ->first();
 
                 if ($existingArticle) {
+                    $readerFields = [];
+
+                    if ($existingArticle->content_hash !== $articleData['content_hash']) {
+                        $readerFields = [
+                            'reader_html' => null,
+                            'reader_text' => null,
+                            'reader_extracted_at' => null,
+                            'reader_error' => null,
+                        ];
+                    }
+
                     $existingArticle->fill([
                         'url' => $articleData['url'],
                         'title' => $articleData['title'],
@@ -112,6 +123,7 @@ class FetchFeedsCommand extends Command
                         'image_url' => $articleData['image_url'],
                         'categories' => $articleData['categories'],
                         'content_hash' => $articleData['content_hash'],
+                        ...$readerFields,
                     ]);
                     $existingArticle->save();
                 } else {

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Article;
+use App\Services\ArticleReaderService;
 use Illuminate\Http\Request;
 
 class ArticleController extends Controller
@@ -32,5 +33,25 @@ class ArticleController extends Controller
         }
 
         return response()->json($query->paginate($perPage));
+    }
+
+    public function show(Article $article, ArticleReaderService $readerService)
+    {
+        $article->loadMissing('feed:id,title,url');
+
+        return response()->json([
+            'id' => $article->id,
+            'feed_id' => $article->feed_id,
+            'title' => $article->title,
+            'url' => $article->url,
+            'guid' => $article->guid,
+            'summary' => $article->summary,
+            'published_at' => $article->published_at?->toIso8601String(),
+            'author' => $article->author,
+            'image_url' => $article->image_url,
+            'categories' => $article->categories,
+            'feed' => $article->feed,
+            'reader' => $readerService->getReaderPayload($article),
+        ]);
     }
 }
