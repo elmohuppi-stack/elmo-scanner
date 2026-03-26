@@ -20,4 +20,5 @@ RUN mkdir -p storage/framework/sessions storage/framework/views storage/framewor
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "php artisan migrate --force && php artisan schedule:work & php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"]
+ENTRYPOINT ["sh", "-c"]
+CMD ["php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"]
