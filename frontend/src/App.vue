@@ -1,5 +1,31 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+
+const THEME_STORAGE_KEY = "elmo-scanner-theme";
+
+function resolveInitialTheme() {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === "light" || storedTheme === "dark") {
+    return storedTheme;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function applyTheme(nextTheme) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.setAttribute("data-theme", nextTheme);
+  document.documentElement.style.colorScheme = nextTheme;
+}
 
 const apiBase =
   import.meta.env.VITE_API_BASE ||
@@ -26,10 +52,25 @@ const editForm = ref({ url: "", title: "" });
 const deletingFeed = ref(null);
 const fetchingAll = ref(false);
 const searchInputRef = ref(null);
+const theme = ref(resolveInitialTheme());
+
+const themeLabel = computed(() =>
+  theme.value === "dark" ? "Hellmodus aktivieren" : "Dark Mode aktivieren",
+);
 
 const form = ref({
   url: "",
   title: "",
+});
+
+applyTheme(theme.value);
+
+watch(theme, (nextTheme) => {
+  applyTheme(nextTheme);
+
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  }
 });
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat("de", {
@@ -345,6 +386,10 @@ function focusSearch() {
   searchInputRef.value?.focus();
 }
 
+function toggleTheme() {
+  theme.value = theme.value === "dark" ? "light" : "dark";
+}
+
 function openEditModal(feed) {
   editingFeed.value = feed;
   editForm.value = { url: feed.url, title: feed.title || "" };
@@ -445,15 +490,32 @@ onMounted(() => {
   bootstrap();
   window.addEventListener("keydown", handleKeydown);
 });
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleKeydown);
+});
 </script>
 
 <template>
   <main class="layout">
     <aside class="sidebar panel">
       <div class="sidebar-head">
-        <p class="overline">Elmo Scanner</p>
-        <h1>Feed Quellen</h1>
-        <p class="subtitle">{{ feeds.length }} Quellen</p>
+        <div class="sidebar-title-row">
+          <div>
+            <p class="overline">Elmo Scanner</p>
+            <h1>Feed Quellen</h1>
+            <p class="subtitle">{{ feeds.length }} Quellen</p>
+          </div>
+          <button
+            class="theme-toggle"
+            type="button"
+            :aria-label="themeLabel"
+            :title="themeLabel"
+            @click="toggleTheme"
+          >
+            <span aria-hidden="true">{{ theme === 'dark' ? '☀' : '☾' }}</span>
+          </button>
+        </div>
       </div>
 
       <div class="sidebar-tabs">
