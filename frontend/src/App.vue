@@ -1,7 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 
-const apiBase = import.meta.env.VITE_API_BASE || "";
+const apiBase =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD
+    ? "https://backend-production-9a1c.up.railway.app"
+    : "");
 
 const feeds = ref([]);
 const feedItems = ref({});

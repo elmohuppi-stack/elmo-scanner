@@ -94,3 +94,78 @@ curl -X POST http://127.0.0.1:8000/api/admin/feeds/1/fetch
 - Die PostgreSQL-Zugangsdaten sind in docker-compose.yml definiert und in backend/.env bereits passend konfiguriert.
 - Der Scheduler fuer periodisches Abrufen ist in backend/routes/console.php hinterlegt.
 - Falls du die Datenbank komplett zuruecksetzen willst: make db-reset
+
+## Railway Deployment
+
+Dieses Projekt wird auf Railway nicht ueber GitHub-Autodeploy aus dem Repo-Root deployed, sondern gezielt pro Service aus den jeweiligen Unterordnern.
+
+### Wichtig
+
+- Das Repo-Root kann in Railway auf den Service `Postgres` gelinkt sein.
+- Ein `railway up` aus dem Projekt-Root kann dann gegen den DB-Service laufen und Fehler wie `Script start.sh not found` oder `Railpack could not determine how to build the app.` ausloesen.
+- Deshalb immer aus dem passenden Service-Verzeichnis deployen.
+
+### Backend deployen
+
+```bash
+cd backend
+railway up . --service backend --path-as-root --detach
+```
+
+Hinweise:
+
+- Das Backend wird ueber `backend/Dockerfile` gebaut.
+- Beim Container-Start laufen die Migrationen automatisch ueber `php artisan migrate --force`.
+- Die produktive Backend-URL ist:
+
+```text
+https://backend-production-9a1c.up.railway.app
+```
+
+### Frontend deployen
+
+```bash
+cd frontend
+railway up . --service frontend --path-as-root --detach
+```
+
+Hinweise:
+
+- Das Frontend wird ueber `frontend/Dockerfile` gebaut.
+- In Produktion darf das Frontend nicht nur relative `/api/...` Requests verwenden, wenn es auf einer eigenen Domain laeuft.
+- Die App muss auf die Railway-Backend-URL zeigen, sonst liefert der Frontend-Host HTML statt JSON und der Browser meldet `Unexpected token '<'`.
+
+### Produktions-Check
+
+Backend direkt pruefen:
+
+```bash
+curl -i https://backend-production-9a1c.up.railway.app/api/feeds?per_page=1
+```
+
+Frontend direkt pruefen:
+
+```bash
+curl -I https://frontend-production-e7bf.up.railway.app/
+```
+
+Logs ansehen:
+
+```bash
+cd backend
+railway logs --service backend --build -n 100
+railway logs --service backend --deployment -n 100
+
+cd ../frontend
+railway logs --service frontend --build -n 100
+railway logs --service frontend --deployment -n 100
+```
+
+### Bekannte Stolpersteine
+
+- `start.sh not found`:
+  meist wurde gegen den falschen Railway-Service deployt.
+- `Unexpected token '<'` im Frontend:
+  das Frontend spricht die falsche URL an und bekommt HTML statt JSON.
+- `Deploy failed` in der CLI trotz erfolgreichem Build:
+  immer die Build- und Deployment-Logs des richtigen Service pruefen, nicht nur die CLI-Zeile.
