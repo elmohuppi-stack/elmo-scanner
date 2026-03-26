@@ -12,6 +12,9 @@
     "/^php artisan migrate:status$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "make": true,
+    "git add": true,
+    "git commit": true
   }
 }

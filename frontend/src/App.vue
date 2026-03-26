@@ -14,6 +14,13 @@ const selectedFeedId = ref(null);
 const contentRef = ref(null);
 const sidebarTab = ref("feeds");
 const activeTag = ref("");
+const draggedFeed = ref(null);
+const feedSearch = ref("");
+const editingFeed = ref(null);
+const editForm = ref({ url: "", title: "" });
+const deletingFeed = ref(null);
+const fetchingAll = ref(false);
+const searchInputRef = ref(null);
 
 const form = ref({
   url: "",
@@ -234,6 +241,59 @@ function clearTagFilter() {
   activeTag.value = "";
 }
 
+function handleDragStart(feed) {
+  draggedFeed.value = feed;
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+}
+
+async function handleDrop(targetFeed) {
+  if (!draggedFeed.value || draggedFeed.value.id === targetFeed.id) {
+    draggedFeed.value = null;
+    return;
+  }
+
+  const draggedIndex = feeds.value.findIndex(
+    (f) => f.id === draggedFeed.value.id,
+  );
+  const targetIndex = feeds.value.findIndex((f) => f.id === targetFeed.id);
+
+  if (draggedIndex === -1 || targetIndex === -1) {
+    draggedFeed.value = null;
+    return;
+  }
+
+  // Swap in local state
+  const newFeeds = [...feeds.value];
+  [newFeeds[draggedIndex], newFeeds[targetIndex]] = [
+    newFeeds[targetIndex],
+    newFeeds[draggedIndex],
+  ];
+  feeds.value = newFeeds;
+
+  // Update backend with new positions
+  try {
+    const feedsWithPositions = feeds.value.map((feed, index) => ({
+      id: feed.id,
+      position: index,
+    }));
+
+    await apiRequest("/api/feeds/reorder", {
+      method: "PATCH",
+      body: JSON.stringify({ feeds: feedsWithPositions }),
+    });
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Reorder fehlgeschlagen.";
+    // Reload feeds to restore original order on error
+    await loadFeeds();
+  } finally {
+    draggedFeed.value = null;
+  }
+}
+
 function formatRelativeTime(value) {
   if (!value) {
     return "Zeit unbekannt";
@@ -266,7 +326,120 @@ function formatRelativeTime(value) {
   return "gerade eben";
 }
 
-onMounted(bootstrap);
+const filteredFeeds = computed(() => {
+  const query = feedSearch.value.trim().toLowerCase();
+  if (!query) return feeds.value;
+  return feeds.value.filter((feed) => {
+    const title = (feed.title || "").toLowerCase();
+    const url = (feed.url || "").toLowerCase();
+    return title.includes(query) || url.includes(query);
+  });
+});
+
+function focusSearch() {
+  searchInputRef.value?.focus();
+}
+
+function openEditModal(feed) {
+  editingFeed.value = feed;
+  editForm.value = { url: feed.url, title: feed.title || "" };
+}
+
+function closeEditModal() {
+  editingFeed.value = null;
+  editForm.value = { url: "", title: "" };
+}
+
+async function saveEdit() {
+  if (!editForm.value.url.trim()) {
+    error.value = "URL ist erforderlich.";
+    return;
+  }
+
+  loading.value = true;
+  error.value = "";
+
+  try {
+    await apiRequest(`/api/feeds/${editingFeed.value.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        url: editForm.value.url.trim(),
+        title: editForm.value.title.trim() || null,
+      }),
+    });
+
+    message.value = "Feed aktualisiert.";
+    closeEditModal();
+    await loadFeeds();
+    await loadAllFeedItems();
+  } catch (e) {
+    error.value =
+      e instanceof Error ? e.message : "Aktualisierung fehlgeschlagen.";
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openDeleteModal(feed) {
+  deletingFeed.value = feed;
+}
+
+function closeDeleteModal() {
+  deletingFeed.value = null;
+}
+
+async function confirmDelete() {
+  const feedId = deletingFeed.value.id;
+  closeDeleteModal();
+
+  loading.value = true;
+  error.value = "";
+
+  try {
+    await apiRequest(`/api/feeds/${feedId}`, {
+      method: "DELETE",
+    });
+
+    message.value = "Feed gelöscht.";
+    await loadFeeds();
+    await loadAllFeedItems();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Löschen fehlgeschlagen.";
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function fetchAllFeeds() {
+  fetchingAll.value = true;
+  error.value = "";
+  message.value = "";
+
+  try {
+    const result = await apiRequest("/api/admin/feeds/fetch-all", {
+      method: "POST",
+    });
+
+    message.value = result.output || "Alle Feeds aktualisiert.";
+    await loadAllFeedItems();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Fetch fehlgeschlagen.";
+  } finally {
+    fetchingAll.value = false;
+  }
+}
+
+function handleKeydown(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    e.preventDefault();
+    focusSearch();
+  }
+}
+
+onMounted(() => {
+  bootstrap();
+  window.addEventListener("keydown", handleKeydown);
+});
 </script>
 
 <template>
@@ -303,8 +476,33 @@ onMounted(bootstrap);
       </div>
 
       <section v-if="sidebarTab === 'feeds'" class="sidebar-section">
+        <div class="feeds-toolbar">
+          <input
+            ref="searchInputRef"
+            v-model="feedSearch"
+            type="text"
+            placeholder="Feeds durchsuchen... (Cmd+K)"
+            class="feed-search"
+          />
+          <button
+            :disabled="fetchingAll || loading"
+            @click="fetchAllFeeds"
+            class="fetch-all-btn"
+            title="Alle Feeds aktualisieren"
+          >
+            ↻
+          </button>
+        </div>
         <ul class="source-list">
-          <li v-for="feed in feeds" :key="feed.id">
+          <li
+            v-for="feed in filteredFeeds"
+            :key="feed.id"
+            draggable="true"
+            @dragstart="handleDragStart(feed)"
+            @dragover="handleDragOver"
+            @drop="handleDrop(feed)"
+            :class="{ dragging: draggedFeed?.id === feed.id }"
+          >
             <button
               class="source-item"
               :class="{ active: selectedFeedId === feed.id }"
@@ -313,6 +511,22 @@ onMounted(bootstrap);
               <strong>{{ feed.title || "Ohne Titel" }}</strong>
               <span>{{ (feedItems[feed.id] || []).length }} Artikel</span>
             </button>
+            <div class="feed-actions">
+              <button
+                class="feed-action-btn edit"
+                @click.prevent="openEditModal(feed)"
+                title="Bearbeiten"
+              >
+                ✏️
+              </button>
+              <button
+                class="feed-action-btn delete"
+                @click.prevent="openDeleteModal(feed)"
+                title="Löschen"
+              >
+                🗑️
+              </button>
+            </div>
           </li>
         </ul>
       </section>
@@ -447,5 +661,54 @@ onMounted(bootstrap);
       <p v-if="message" class="message panel">{{ message }}</p>
       <p v-if="error" class="error panel">{{ error }}</p>
     </section>
+
+    <!-- Edit Feed Modal -->
+    <div v-if="editingFeed" class="modal-overlay" @click="closeEditModal">
+      <div class="modal-content" @click.stop>
+        <h2>Feed bearbeiten</h2>
+        <form @submit.prevent="saveEdit">
+          <div class="form-group">
+            <label>URL</label>
+            <input
+              v-model="editForm.url"
+              type="url"
+              required
+              :disabled="loading"
+            />
+          </div>
+          <div class="form-group">
+            <label>Titel (optional)</label>
+            <input v-model="editForm.title" type="text" :disabled="loading" />
+          </div>
+          <div class="modal-actions">
+            <button type="button" @click="closeEditModal" :disabled="loading">
+              Abbrechen
+            </button>
+            <button type="submit" :disabled="loading">
+              {{ loading ? "Speichern..." : "Speichern" }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div v-if="deletingFeed" class="modal-overlay" @click="closeDeleteModal">
+      <div class="modal-content modal-danger" @click.stop>
+        <h2>Feed löschen?</h2>
+        <p>
+          {{ deletingFeed.title || "Dieser Feed" }} wird permanently gelöscht
+          und alle zugehörigen Artikel werden entfernt.
+        </p>
+        <div class="modal-actions">
+          <button @click="closeDeleteModal" :disabled="loading">
+            Abbrechen
+          </button>
+          <button class="btn-danger" @click="confirmDelete" :disabled="loading">
+            {{ loading ? "Löschen..." : "Löschen" }}
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>

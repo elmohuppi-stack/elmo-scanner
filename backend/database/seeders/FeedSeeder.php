@@ -37,13 +37,14 @@ class FeedSeeder extends Seeder
             ['title' => 'Anti-Spiegel', 'url' => 'https://anti-spiegel.ru/feed/'],
         ];
 
-        foreach ($defaultFeeds as $feed) {
+        foreach ($defaultFeeds as $index => $feed) {
             Feed::updateOrCreate(
                 ['url' => $feed['url']],
                 [
                     'title' => $feed['title'],
                     'is_active' => true,
                     'polling_interval_minutes' => 15,
+                    'position' => $index,
                 ]
             );
         }

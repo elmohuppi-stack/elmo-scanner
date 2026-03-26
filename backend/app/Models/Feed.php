@@ -14,6 +14,7 @@ class Feed extends Model
         'polling_interval_minutes',
         'last_fetched_at',
         'last_error',
+        'position',
     ];
 
     protected function casts(): array
