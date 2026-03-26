@@ -17,6 +17,14 @@
     "git add": true,
     "git commit": true,
     "git push": true,
-    "railway": true
+    "railway": true,
+    "/^cd /Users/elmarhepp/workspace/elmo-scanner/backend && pwd && php artisan test tests/Feature/ArticleReaderTest\\.php$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^php artisan test tests/Feature/ArticleReaderTest\\.php$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }
