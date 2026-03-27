@@ -98,4 +98,78 @@ class FetchFeedsCommandTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_fetch_all_endpoint_can_force_refresh_all_active_feeds(): void
+    {
+        Carbon::setTestNow('2026-03-27 12:00:00');
+
+        Feed::query()->create([
+            'title' => 'Recent Feed',
+            'url' => 'https://recent.example/feed.xml',
+            'position' => 0,
+            'polling_interval_minutes' => 15,
+            'is_active' => true,
+            'last_fetched_at' => now()->subMinutes(2),
+        ]);
+
+        Feed::query()->create([
+            'title' => 'Stale Feed',
+            'url' => 'https://stale.example/feed.xml',
+            'position' => 1,
+            'polling_interval_minutes' => 15,
+            'is_active' => true,
+            'last_fetched_at' => now()->subMinutes(20),
+        ]);
+
+        Http::fake([
+            'https://recent.example/feed.xml' => Http::response(<<<'XML'
+                                <?xml version="1.0" encoding="UTF-8"?>
+                                <rss version="2.0">
+                                    <channel>
+                                        <title>Recent Feed</title>
+                                        <item>
+                                            <title>Recent Item</title>
+                                            <link>https://recent.example/item-1</link>
+                                            <guid>recent-item-1</guid>
+                                            <description>Example summary</description>
+                                        </item>
+                                    </channel>
+                                </rss>
+                                XML),
+            'https://stale.example/feed.xml' => Http::response(<<<'XML'
+                                <?xml version="1.0" encoding="UTF-8"?>
+                                <rss version="2.0">
+                                    <channel>
+                                        <title>Stale Feed</title>
+                                        <item>
+                                            <title>Stale Item</title>
+                                            <link>https://stale.example/item-1</link>
+                                            <guid>stale-item-1</guid>
+                                            <description>Example summary</description>
+                                        </item>
+                                    </channel>
+                                </rss>
+                                XML),
+        ]);
+
+        $response = $this->postJson('/api/admin/feeds/fetch-all', [
+            'force_all' => true,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('message', 'All active feeds fetched successfully.')
+            ->assertJsonPath('mode', 'all')
+            ->assertJsonPath('stale_for_minutes', null)
+            ->assertJsonPath('eligible_count', 2)
+            ->assertJsonPath('refreshed_count', 2)
+            ->assertJsonPath('skipped_count', 0)
+            ->assertJsonPath('failed_count', 0);
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn($request) => $request->url() === 'https://recent.example/feed.xml');
+        Http::assertSent(fn($request) => $request->url() === 'https://stale.example/feed.xml');
+
+        Carbon::setTestNow();
+    }
 }

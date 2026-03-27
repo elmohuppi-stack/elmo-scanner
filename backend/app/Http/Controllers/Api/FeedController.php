@@ -99,12 +99,18 @@ class FeedController extends Controller
         return response()->json(['message' => 'Feed deleted successfully.'], 200);
     }
 
-    public function fetchAll()
+    public function fetchAll(Request $request)
     {
         $staleForMinutes = 5;
+        $forceAll = $request->boolean('force_all');
         $startedAt = Carbon::now();
-        $eligibleFeedIds = Feed::query()
-            ->where('is_active', true)
+
+        $activeFeedsQuery = Feed::query()->where('is_active', true);
+        $totalActiveCount = (clone $activeFeedsQuery)->count();
+
+        $targetFeedIds = $forceAll
+            ? (clone $activeFeedsQuery)->pluck('id')
+            : (clone $activeFeedsQuery)
             ->where(function ($query) use ($staleForMinutes, $startedAt) {
                 $query
                     ->whereNull('last_fetched_at')
@@ -112,25 +118,29 @@ class FeedController extends Controller
             })
             ->pluck('id');
 
-        $eligibleCount = $eligibleFeedIds->count();
-        $totalActiveCount = Feed::query()->where('is_active', true)->count();
+        $targetCount = $targetFeedIds->count();
 
-        Artisan::call('feeds:fetch', [
+        $commandArgs = [
             '--limit' => null,
-            '--stale_for_minutes' => $staleForMinutes,
-        ]);
+        ];
 
-        $refreshedCount = $eligibleCount === 0
+        if (! $forceAll) {
+            $commandArgs['--stale_for_minutes'] = $staleForMinutes;
+        }
+
+        Artisan::call('feeds:fetch', $commandArgs);
+
+        $refreshedCount = $targetCount === 0
             ? 0
             : Feed::query()
-            ->whereIn('id', $eligibleFeedIds)
+            ->whereIn('id', $targetFeedIds)
             ->where('last_fetched_at', '>=', $startedAt)
             ->count();
 
-        $refreshedFeedTitles = $eligibleCount === 0
+        $refreshedFeedTitles = $targetCount === 0
             ? []
             : Feed::query()
-            ->whereIn('id', $eligibleFeedIds)
+            ->whereIn('id', $targetFeedIds)
             ->where('last_fetched_at', '>=', $startedAt)
             ->orderBy('position', 'asc')
             ->orderBy('created_at', 'asc')
@@ -139,14 +149,17 @@ class FeedController extends Controller
             ->values()
             ->all();
 
-        $skippedCount = max($totalActiveCount - $eligibleCount, 0);
-        $failedCount = max($eligibleCount - $refreshedCount, 0);
+        $skippedCount = $forceAll ? 0 : max($totalActiveCount - $targetCount, 0);
+        $failedCount = max($targetCount - $refreshedCount, 0);
 
         return response()->json([
-            'message' => 'Eligible feeds fetched successfully.',
+            'message' => $forceAll
+                ? 'All active feeds fetched successfully.'
+                : 'Eligible feeds fetched successfully.',
             'output' => trim(Artisan::output()),
-            'stale_for_minutes' => $staleForMinutes,
-            'eligible_count' => $eligibleCount,
+            'mode' => $forceAll ? 'all' : 'stale',
+            'stale_for_minutes' => $forceAll ? null : $staleForMinutes,
+            'eligible_count' => $targetCount,
             'refreshed_count' => $refreshedCount,
             'refreshed_feed_titles' => $refreshedFeedTitles,
             'skipped_count' => $skippedCount,

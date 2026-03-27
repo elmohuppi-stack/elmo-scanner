@@ -30,7 +30,10 @@ class FetchFeedsCommand extends Command
      */
     public function handle(): int
     {
-        $limit = max(1, (int) $this->option('limit'));
+        $limitOption = $this->option('limit');
+        $limit = ($limitOption === null || $limitOption === '')
+            ? null
+            : max(1, (int) $limitOption);
 
         $query = Feed::query()->where('is_active', true)->orderBy('id');
 
@@ -50,7 +53,11 @@ class FetchFeedsCommand extends Command
             });
         }
 
-        $feeds = $query->limit($limit)->get();
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        $feeds = $query->get();
 
         if ($feeds->isEmpty()) {
             $message = $staleForMinutes !== null

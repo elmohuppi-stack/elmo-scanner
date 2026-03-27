@@ -188,11 +188,13 @@ const bulkRefreshEligibleCount = computed(
 
 const bulkRefreshButtonTitle = computed(() => {
   if (fetchingAll.value) {
-    return "Fällige Feeds werden aktualisiert";
+    return bulkRefreshEligibleCount.value > 0
+      ? "Fällige Feeds werden aktualisiert"
+      : "Alle Feeds werden aktualisiert";
   }
 
   if (bulkRefreshEligibleCount.value === 0) {
-    return `Keine Feeds älter als ${BULK_REFRESH_STALE_MINUTES} Minuten`;
+    return "Keine fälligen Feeds - alle Feeds aktualisieren";
   }
 
   return `${bulkRefreshEligibleCount.value} Feed${bulkRefreshEligibleCount.value === 1 ? "" : "s"} aktualisieren`;
@@ -452,6 +454,7 @@ function isFeedStaleWithError(feed) {
 }
 
 function buildFetchAllMessage(result) {
+  const mode = result?.mode === "all" ? "all" : "stale";
   const refreshedCount = Number(result?.refreshed_count || 0);
   const refreshedFeedTitles = Array.isArray(result?.refreshed_feed_titles)
     ? result.refreshed_feed_titles.filter(Boolean)
@@ -459,7 +462,12 @@ function buildFetchAllMessage(result) {
   const skippedCount = Number(result?.skipped_count || 0);
   const failedCount = Number(result?.failed_count || 0);
 
-  if (refreshedCount === 0 && skippedCount > 0 && failedCount === 0) {
+  if (
+    mode === "stale" &&
+    refreshedCount === 0 &&
+    skippedCount > 0 &&
+    failedCount === 0
+  ) {
     return `Keine fälligen Feeds. ${skippedCount} übersprungen.`;
   }
 
@@ -472,8 +480,10 @@ function buildFetchAllMessage(result) {
     parts.push(`${failedCount} fehlgeschlagen`);
   }
 
+  const prefix = mode === "all" ? "Alle-Feeds-Refresh" : "Feed-Refresh";
+
   if (refreshedFeedTitles.length === 0) {
-    return `Feed-Refresh: ${parts.join(", ")}.`;
+    return `${prefix}: ${parts.join(", ")}.`;
   }
 
   const visibleTitles = refreshedFeedTitles.slice(0, 3);
@@ -483,7 +493,7 @@ function buildFetchAllMessage(result) {
       ? `${visibleTitles.join(", ")} +${remainingCount} weitere`
       : visibleTitles.join(", ");
 
-  return `Feed-Refresh: ${parts.join(", ")}. Aktualisiert: ${feedList}.`;
+  return `${prefix}: ${parts.join(", ")}. Aktualisiert: ${feedList}.`;
 }
 
 function getFeedHost(feed) {
@@ -735,18 +745,17 @@ async function confirmDelete() {
 }
 
 async function fetchAllFeeds() {
-  if (bulkRefreshEligibleCount.value === 0) {
-    message.value = `Keine Feeds älter als ${BULK_REFRESH_STALE_MINUTES} Minuten.`;
-    return;
-  }
-
   fetchingAll.value = true;
   error.value = "";
   message.value = "";
+  const forceAll = bulkRefreshEligibleCount.value === 0;
 
   try {
     const result = await apiRequest("/api/admin/feeds/fetch-all", {
       method: "POST",
+      body: JSON.stringify({
+        force_all: forceAll,
+      }),
     });
 
     message.value = buildFetchAllMessage(result);
@@ -852,7 +861,7 @@ onUnmounted(() => {
             Filter: {{ activeTag }} ×
           </button>
           <button
-            :disabled="fetchingAll || loading || bulkRefreshEligibleCount === 0"
+            :disabled="fetchingAll || loading"
             @click="fetchAllFeeds"
             class="fetch-all-btn"
             :class="{ 'fetch-all-btn--loading': fetchingAll }"

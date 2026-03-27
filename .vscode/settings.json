@@ -25,6 +25,11 @@
     "/^php artisan test tests/Feature/ArticleReaderTest\\.php$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "/^cd /Users/elmarhepp/workspace/elmo-scanner && node <<'NODE'\n\\(async \\(\\) => \\{\n  let url = 'https://backend-production-9a1c\\.up\\.railway\\.app/api/feeds\\?per_page=100';\n  const all = \\[\\];\n\n  while \\(url\\) \\{\n    const res = await fetch\\(url\\);\n    const data = await res\\.json\\(\\);\n    all\\.push\\(\\.\\.\\.data\\.data\\);\n    url = data\\.next_page_url;\n  \\}\n\n  const now = Date\\.now\\(\\);\n  const eligible = all\\.filter\\(\\(f\\) => \\{\n    if \\(!f\\.last_fetched_at\\) return true;\n    return now - Date\\.parse\\(f\\.last_fetched_at\\) >= 5 \\* 60 \\* 1000;\n  \\}\\)\\.length;\n\n  console\\.log\\('total', all\\.length, 'eligible_older_than_5min', eligible\\);\n\\}\\)\\(\\);\nNODE$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "npm run build": true
   }
 }
