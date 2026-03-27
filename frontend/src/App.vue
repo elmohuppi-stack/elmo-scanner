@@ -1082,9 +1082,18 @@ onUnmounted(() => {
                     <span v-else class="source-badge source-badge-small">{{
                       getFeedBadge(getItemFeed(item, entry.feed))
                     }}</span>
-                    <span class="item-source-name">{{
-                      getFeedLabel(getItemFeed(item, entry.feed))
-                    }}</span>
+                    <span
+                      class="item-source-name"
+                      :title="getFeedLabel(getItemFeed(item, entry.feed))"
+                      >{{ getFeedLabel(getItemFeed(item, entry.feed)) }}</span
+                    >
+                    <span
+                      v-if="getFeedHost(getItemFeed(item, entry.feed))"
+                      class="item-source-host"
+                      :title="getFeedHost(getItemFeed(item, entry.feed))"
+                    >
+                      {{ getFeedHost(getItemFeed(item, entry.feed)) }}
+                    </span>
                     <span class="item-time">{{
                       formatRelativeTime(item.published_at)
                     }}</span>
@@ -1205,9 +1214,14 @@ onUnmounted(() => {
                 getFeedBadge(getItemFeed(previewItem))
               }}</span>
               <div class="article-preview-source-copy">
-                <span class="article-preview-source-name">{{
-                  getFeedLabel(getItemFeed(previewItem))
-                }}</span>
+                <a
+                  class="article-preview-source-name"
+                  :href="getItemFeed(previewItem)?.url || '#'"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :title="getItemFeed(previewItem)?.url || undefined"
+                  >{{ getFeedLabel(getItemFeed(previewItem)) }}</a
+                >
                 <span class="article-preview-source-detail">
                   {{ formatRelativeTime(previewItem.published_at) }}
                   <template v-if="getFeedHost(getItemFeed(previewItem))">
