@@ -2,6 +2,13 @@
 
 RSS Reader MVP mit Laravel API, Vue Frontend und PostgreSQL in Docker.
 
+## Neu (März 2026)
+
+- Sidebar-Filter verbessert: aktiver Tag-Filter ist im Feeds-Tab direkt sichtbar.
+- Im Feeds-Tab gibt es einen direkten "Filter zuruecksetzen"-Button neben der Feed-Suche.
+- Feed-Zaehler zeigen bei aktivem Tag-Filter jetzt Treffer und Gesamtzahl pro Feed (`x von y Artikel`).
+- Feed-Buttons ohne Treffer fuer den aktiven Tag-Filter werden deaktiviert, um unnoetige Klicks zu vermeiden.
+
 ## Projektstruktur
 
 - backend: Laravel API, Scheduler, Feed-Ingestion

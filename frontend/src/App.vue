@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const THEME_STORAGE_KEY = "elmo-scanner-theme";
+const BULK_REFRESH_STALE_MINUTES = 5;
 
 function resolveInitialTheme() {
   if (typeof window === "undefined") {
@@ -56,6 +57,7 @@ const theme = ref(resolveInitialTheme());
 const previewItem = ref(null);
 const previewReader = ref(null);
 const previewLoading = ref(false);
+const failedFaviconHosts = ref(new Set());
 let previewRequestId = 0;
 
 const themeLabel = computed(() =>
@@ -152,6 +154,48 @@ const tagStats = computed(() => {
       }
       return a.name.localeCompare(b.name, "de");
     });
+});
+
+const filteredTagItemCountByFeed = computed(() => {
+  if (!activeTag.value) {
+    return {};
+  }
+
+  const counts = {};
+
+  for (const feed of feeds.value) {
+    const items = feedItems.value[feed.id] || [];
+    counts[feed.id] = items.filter((item) => {
+      const categories = Array.isArray(item.categories) ? item.categories : [];
+      return categories.some((category) => category === activeTag.value);
+    }).length;
+  }
+
+  return counts;
+});
+
+function isFeedDisabledByTagFilter(feedId) {
+  if (!activeTag.value) {
+    return false;
+  }
+
+  return (filteredTagItemCountByFeed.value[feedId] || 0) === 0;
+}
+
+const bulkRefreshEligibleCount = computed(
+  () => feeds.value.filter((feed) => isFeedEligibleForBulkRefresh(feed)).length,
+);
+
+const bulkRefreshButtonTitle = computed(() => {
+  if (fetchingAll.value) {
+    return "Fällige Feeds werden aktualisiert";
+  }
+
+  if (bulkRefreshEligibleCount.value === 0) {
+    return `Keine Feeds älter als ${BULK_REFRESH_STALE_MINUTES} Minuten`;
+  }
+
+  return `${bulkRefreshEligibleCount.value} Feed${bulkRefreshEligibleCount.value === 1 ? "" : "s"} aktualisieren`;
 });
 
 async function apiRequest(path, options = {}) {
@@ -384,6 +428,146 @@ function formatRelativeTime(value) {
   return "gerade eben";
 }
 
+function isFeedEligibleForBulkRefresh(feed) {
+  if (!feed?.is_active) {
+    return false;
+  }
+
+  if (!feed.last_fetched_at) {
+    return true;
+  }
+
+  const timestamp = new Date(feed.last_fetched_at);
+  if (Number.isNaN(timestamp.getTime())) {
+    return true;
+  }
+
+  return (
+    Date.now() - timestamp.getTime() >= BULK_REFRESH_STALE_MINUTES * 60 * 1000
+  );
+}
+
+function isFeedStaleWithError(feed) {
+  return isFeedEligibleForBulkRefresh(feed) && Boolean(feed?.last_error);
+}
+
+function buildFetchAllMessage(result) {
+  const refreshedCount = Number(result?.refreshed_count || 0);
+  const refreshedFeedTitles = Array.isArray(result?.refreshed_feed_titles)
+    ? result.refreshed_feed_titles.filter(Boolean)
+    : [];
+  const skippedCount = Number(result?.skipped_count || 0);
+  const failedCount = Number(result?.failed_count || 0);
+
+  if (refreshedCount === 0 && skippedCount > 0 && failedCount === 0) {
+    return `Keine fälligen Feeds. ${skippedCount} übersprungen.`;
+  }
+
+  const parts = [
+    `${refreshedCount} aktualisiert`,
+    `${skippedCount} übersprungen`,
+  ];
+
+  if (failedCount > 0) {
+    parts.push(`${failedCount} fehlgeschlagen`);
+  }
+
+  if (refreshedFeedTitles.length === 0) {
+    return `Feed-Refresh: ${parts.join(", ")}.`;
+  }
+
+  const visibleTitles = refreshedFeedTitles.slice(0, 3);
+  const remainingCount = refreshedFeedTitles.length - visibleTitles.length;
+  const feedList =
+    remainingCount > 0
+      ? `${visibleTitles.join(", ")} +${remainingCount} weitere`
+      : visibleTitles.join(", ");
+
+  return `Feed-Refresh: ${parts.join(", ")}. Aktualisiert: ${feedList}.`;
+}
+
+function getFeedHost(feed) {
+  const rawUrl = String(feed?.url || "").trim();
+
+  if (!rawUrl) {
+    return "";
+  }
+
+  try {
+    return new URL(rawUrl).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function getFeedLabel(feed) {
+  const title = String(feed?.title || "").trim();
+
+  if (title) {
+    return title;
+  }
+
+  const host = getFeedHost(feed);
+  return host || "Unbekannte Quelle";
+}
+
+function getFeedBadge(feed) {
+  const source = getFeedLabel(feed)
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (source.length === 0) {
+    return "?";
+  }
+
+  if (source.length === 1) {
+    return source[0].slice(0, 2).toUpperCase();
+  }
+
+  return source
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function getFeedFaviconUrl(feed) {
+  const host = getFeedHost(feed);
+
+  if (!host) {
+    return "";
+  }
+
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+}
+
+function hasFeedFavicon(feed) {
+  const host = getFeedHost(feed);
+  return host !== "" && !failedFaviconHosts.value.has(host);
+}
+
+function handleFeedFaviconError(feed) {
+  const host = getFeedHost(feed);
+
+  if (!host || failedFaviconHosts.value.has(host)) {
+    return;
+  }
+
+  failedFaviconHosts.value = new Set([...failedFaviconHosts.value, host]);
+}
+
+function getItemFeed(item, fallbackFeed = null) {
+  return item?.feed || fallbackFeed || null;
+}
+
+function getFeedFetchLabel(feed) {
+  if (!feed?.last_fetched_at) {
+    return "nie";
+  }
+
+  return formatRelativeTime(feed.last_fetched_at);
+}
+
 const filteredFeeds = computed(() => {
   const query = feedSearch.value.trim().toLowerCase();
   if (!query) return feeds.value;
@@ -551,6 +735,11 @@ async function confirmDelete() {
 }
 
 async function fetchAllFeeds() {
+  if (bulkRefreshEligibleCount.value === 0) {
+    message.value = `Keine Feeds älter als ${BULK_REFRESH_STALE_MINUTES} Minuten.`;
+    return;
+  }
+
   fetchingAll.value = true;
   error.value = "";
   message.value = "";
@@ -560,7 +749,8 @@ async function fetchAllFeeds() {
       method: "POST",
     });
 
-    message.value = result.output || "Alle Feeds aktualisiert.";
+    message.value = buildFetchAllMessage(result);
+    await loadFeeds();
     await loadAllFeedItems();
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Fetch fehlgeschlagen.";
@@ -616,10 +806,17 @@ onUnmounted(() => {
       <div class="sidebar-tabs">
         <button
           class="tab-btn"
-          :class="{ active: sidebarTab === 'feeds' }"
+          :class="{
+            active: sidebarTab === 'feeds',
+            'tab-btn--has-filter': activeTag,
+          }"
           @click="setSidebarTab('feeds')"
+          :title="activeTag ? `Filter aktiv: ${activeTag}` : undefined"
         >
           Feeds
+          <span v-if="activeTag" class="filter-badge" aria-label="Filter aktiv"
+            >🏷️</span
+          >
         </button>
         <button
           class="tab-btn"
@@ -647,13 +844,34 @@ onUnmounted(() => {
             class="feed-search"
           />
           <button
-            :disabled="fetchingAll || loading"
+            v-if="activeTag"
+            class="clear-filter clear-filter--feeds"
+            @click="clearTagFilter"
+            :title="`Aktiven Filter '${activeTag}' entfernen`"
+          >
+            Filter: {{ activeTag }} ×
+          </button>
+          <button
+            :disabled="fetchingAll || loading || bulkRefreshEligibleCount === 0"
             @click="fetchAllFeeds"
             class="fetch-all-btn"
-            title="Alle Feeds aktualisieren"
+            :class="{ 'fetch-all-btn--loading': fetchingAll }"
+            :title="bulkRefreshButtonTitle"
+            :aria-label="bulkRefreshButtonTitle"
           >
-            ↻
+            <span aria-hidden="true" class="fetch-icon">↻</span>
+            <span
+              v-if="bulkRefreshEligibleCount > 0 && !fetchingAll"
+              class="fetch-all-count"
+              aria-hidden="true"
+            >
+              {{ bulkRefreshEligibleCount }}
+            </span>
           </button>
+        </div>
+        <div v-if="fetchingAll" class="refresh-status-message" role="status">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Feeds werden aktualisiert…</span>
         </div>
         <ul class="source-list">
           <li
@@ -667,11 +885,48 @@ onUnmounted(() => {
           >
             <button
               class="source-item"
-              :class="{ active: selectedFeedId === feed.id }"
+              :class="{
+                active: selectedFeedId === feed.id,
+                'source-item--disabled': isFeedDisabledByTagFilter(feed.id),
+                'source-item--stale': isFeedEligibleForBulkRefresh(feed),
+                'source-item--error': isFeedStaleWithError(feed),
+              }"
+              :disabled="isFeedDisabledByTagFilter(feed.id)"
               @click="selectFeed(feed.id)"
+              :title="
+                isFeedDisabledByTagFilter(feed.id)
+                  ? `Keine Artikel mit Tag '${activeTag}' in diesem Feed`
+                  : isFeedStaleWithError(feed)
+                    ? `Fehler beim letzten Update: ${feed.last_error}`
+                    : isFeedEligibleForBulkRefresh(feed)
+                      ? 'Dieser Feed ist älter als 5 Minuten und kann aktualisiert werden'
+                      : undefined
+              "
             >
-              <strong>{{ feed.title || "Ohne Titel" }}</strong>
-              <span>{{ (feedItems[feed.id] || []).length }} Artikel</span>
+              <div class="source-item-title-row">
+                <strong>{{ feed.title || "Ohne Titel" }}</strong>
+                <span
+                  v-if="isFeedEligibleForBulkRefresh(feed)"
+                  class="stale-indicator"
+                  aria-hidden="true"
+                  >·</span
+                >
+              </div>
+              <span class="source-item-meta">
+                <span v-if="activeTag"
+                  >{{ filteredTagItemCountByFeed[feed.id] || 0 }} von
+                  {{ (feedItems[feed.id] || []).length }} Artikel</span
+                >
+                <span v-else
+                  >{{ (feedItems[feed.id] || []).length }} Artikel</span
+                >
+                <span
+                  class="source-item-time"
+                  :title="`Zuletzt aktualisiert: ${getFeedFetchLabel(feed)}`"
+                >
+                  {{ getFeedFetchLabel(feed) }}
+                </span>
+              </span>
             </button>
             <div class="feed-actions">
               <button
@@ -759,6 +1014,19 @@ onUnmounted(() => {
         :key="entry.feed.id"
         class="feed-card panel"
       >
+        <div
+          v-if="activeTag && entry.items.length === 0 && entry.totalItems > 0"
+          class="filter-notice"
+        >
+          <strong>⚠️ Kein Artikel mit Tag "{{ activeTag }}"</strong>
+          <p>
+            Dieser Feed hat {{ entry.totalItems }} Artikel, aber keine zum Tag
+            "{{ activeTag }}".
+          </p>
+          <button class="filter-notice-clear" @click="clearTagFilter">
+            Filter löschen
+          </button>
+        </div>
         <header class="feed-card-head">
           <div>
             <h3>{{ entry.feed.title || "Ohne Titel" }}</h3>
@@ -791,9 +1059,27 @@ onUnmounted(() => {
 
               <div class="item-body">
                 <div class="item-top">
-                  <span class="item-time">{{
-                    formatRelativeTime(item.published_at)
-                  }}</span>
+                  <div class="item-source-line">
+                    <img
+                      v-if="hasFeedFavicon(getItemFeed(item, entry.feed))"
+                      class="source-favicon source-favicon-small"
+                      :src="getFeedFaviconUrl(getItemFeed(item, entry.feed))"
+                      :alt="`${getFeedLabel(getItemFeed(item, entry.feed))} Icon`"
+                      loading="lazy"
+                      @error="
+                        handleFeedFaviconError(getItemFeed(item, entry.feed))
+                      "
+                    />
+                    <span v-else class="source-badge source-badge-small">{{
+                      getFeedBadge(getItemFeed(item, entry.feed))
+                    }}</span>
+                    <span class="item-source-name">{{
+                      getFeedLabel(getItemFeed(item, entry.feed))
+                    }}</span>
+                    <span class="item-time">{{
+                      formatRelativeTime(item.published_at)
+                    }}</span>
+                  </div>
                   <ul
                     v-if="
                       Array.isArray(item.categories) &&
@@ -896,6 +1182,30 @@ onUnmounted(() => {
                 Original öffnen
               </button>
               <span class="preview-state">Interne Reader-Ansicht aktiv</span>
+            </div>
+            <div class="article-preview-meta">
+              <img
+                v-if="hasFeedFavicon(getItemFeed(previewItem))"
+                class="source-favicon"
+                :src="getFeedFaviconUrl(getItemFeed(previewItem))"
+                :alt="`${getFeedLabel(getItemFeed(previewItem))} Icon`"
+                loading="lazy"
+                @error="handleFeedFaviconError(getItemFeed(previewItem))"
+              />
+              <span v-else class="source-badge">{{
+                getFeedBadge(getItemFeed(previewItem))
+              }}</span>
+              <div class="article-preview-source-copy">
+                <span class="article-preview-source-name">{{
+                  getFeedLabel(getItemFeed(previewItem))
+                }}</span>
+                <span class="article-preview-source-detail">
+                  {{ formatRelativeTime(previewItem.published_at) }}
+                  <template v-if="getFeedHost(getItemFeed(previewItem))">
+                    · {{ getFeedHost(getItemFeed(previewItem)) }}
+                  </template>
+                </span>
+              </div>
             </div>
           </div>
           <button

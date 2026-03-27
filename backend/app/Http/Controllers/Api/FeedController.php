@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Feed;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 class FeedController extends Controller
@@ -100,13 +101,56 @@ class FeedController extends Controller
 
     public function fetchAll()
     {
+        $staleForMinutes = 5;
+        $startedAt = Carbon::now();
+        $eligibleFeedIds = Feed::query()
+            ->where('is_active', true)
+            ->where(function ($query) use ($staleForMinutes, $startedAt) {
+                $query
+                    ->whereNull('last_fetched_at')
+                    ->orWhere('last_fetched_at', '<', $startedAt->copy()->subMinutes($staleForMinutes));
+            })
+            ->pluck('id');
+
+        $eligibleCount = $eligibleFeedIds->count();
+        $totalActiveCount = Feed::query()->where('is_active', true)->count();
+
         Artisan::call('feeds:fetch', [
             '--limit' => null,
+            '--stale_for_minutes' => $staleForMinutes,
         ]);
 
+        $refreshedCount = $eligibleCount === 0
+            ? 0
+            : Feed::query()
+            ->whereIn('id', $eligibleFeedIds)
+            ->where('last_fetched_at', '>=', $startedAt)
+            ->count();
+
+        $refreshedFeedTitles = $eligibleCount === 0
+            ? []
+            : Feed::query()
+            ->whereIn('id', $eligibleFeedIds)
+            ->where('last_fetched_at', '>=', $startedAt)
+            ->orderBy('position', 'asc')
+            ->orderBy('created_at', 'asc')
+            ->get(['title', 'url'])
+            ->map(fn(Feed $feed) => $feed->title ?: $feed->url)
+            ->values()
+            ->all();
+
+        $skippedCount = max($totalActiveCount - $eligibleCount, 0);
+        $failedCount = max($eligibleCount - $refreshedCount, 0);
+
         return response()->json([
-            'message' => 'All feeds fetched successfully.',
+            'message' => 'Eligible feeds fetched successfully.',
             'output' => trim(Artisan::output()),
+            'stale_for_minutes' => $staleForMinutes,
+            'eligible_count' => $eligibleCount,
+            'refreshed_count' => $refreshedCount,
+            'refreshed_feed_titles' => $refreshedFeedTitles,
+            'skipped_count' => $skippedCount,
+            'failed_count' => $failedCount,
         ]);
     }
 }

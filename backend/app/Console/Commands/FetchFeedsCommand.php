@@ -16,7 +16,7 @@ class FetchFeedsCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'feeds:fetch {--feed_id= : Fetch only one feed by id} {--limit=100 : Max number of feeds to process}';
+    protected $signature = 'feeds:fetch {--feed_id= : Fetch only one feed by id} {--limit=100 : Max number of feeds to process} {--stale_for_minutes= : Fetch only feeds not updated within the given number of minutes}';
 
     /**
      * The console command description.
@@ -38,10 +38,26 @@ class FetchFeedsCommand extends Command
             $query->where('id', (int) $this->option('feed_id'));
         }
 
+        $staleForMinutes = $this->resolveStaleForMinutes();
+
+        if ($staleForMinutes !== null && ! $this->option('feed_id')) {
+            $cutoff = Carbon::now()->subMinutes($staleForMinutes);
+
+            $query->where(function (Builder $builder) use ($cutoff) {
+                $builder
+                    ->whereNull('last_fetched_at')
+                    ->orWhere('last_fetched_at', '<', $cutoff);
+            });
+        }
+
         $feeds = $query->limit($limit)->get();
 
         if ($feeds->isEmpty()) {
-            $this->info('No active feeds found.');
+            $message = $staleForMinutes !== null
+                ? 'No eligible feeds found for refresh.'
+                : 'No active feeds found.';
+
+            $this->info($message);
 
             return self::SUCCESS;
         }
@@ -54,6 +70,17 @@ class FetchFeedsCommand extends Command
         $this->info('Feed import completed.');
 
         return self::SUCCESS;
+    }
+
+    private function resolveStaleForMinutes(): ?int
+    {
+        $value = $this->option('stale_for_minutes');
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return max(1, (int) $value);
     }
 
     private function fetchFeed(Feed $feed): void
