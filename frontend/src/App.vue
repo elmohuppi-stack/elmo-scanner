@@ -1106,10 +1106,17 @@ onUnmounted(() => {
                     class="tag-list"
                   >
                     <li
-                      v-for="category in item.categories"
+                      v-for="category in item.categories.slice(0, 2)"
                       :key="`${item.id}-${category}`"
                     >
                       {{ category }}
+                    </li>
+                    <li
+                      v-if="item.categories.length > 2"
+                      :key="`${item.id}-more-categories`"
+                      :title="`${item.categories.length - 2} weitere Kategorien`"
+                    >
+                      +{{ item.categories.length - 2 }}
                     </li>
                   </ul>
                 </div>
