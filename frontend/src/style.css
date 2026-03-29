@@ -1456,13 +1456,20 @@ h3 {
   }
 
   .article-preview-overlay {
-    padding: 10px;
+    padding: 0;
+    align-items: stretch;
   }
 
   .article-preview-modal {
-    width: min(92vw, 960px);
-    padding: 16px;
-    height: calc(100vh - 20px);
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+    padding: 12px;
+    height: 100dvh;
+    margin: 0;
+    gap: 10px;
+    display: flex;
+    flex-direction: column;
   }
 
   .article-preview-head {
@@ -1482,12 +1489,13 @@ h3 {
   }
 
   .article-reader-shell {
-    min-height: 46vh;
+    flex: 1;
+    min-height: 0;
   }
 
   .article-reader-content {
-    height: 46vh;
-    padding: 16px;
+    height: 100%;
+    padding: 14px;
   }
 }
 
