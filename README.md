@@ -2,6 +2,18 @@
 
 RSS Reader MVP mit Laravel API, Vue Frontend und PostgreSQL in Docker.
 
+## Was macht diese App?
+
+Elmo Scanner sammelt Artikel aus RSS/Atom-Feeds und stellt sie als durchsuchbare Uebersicht bereit.
+
+- Feeds verwalten: Hinzufuegen, Bearbeiten, Loeschen, Sortieren
+- Artikel lesen: Liste pro Feed, Detailansicht, Reader-Ansicht mit Fallback auf Feed-Summary
+- Filtern: Volltextsuche und Tag/Kategorie-Filter
+- Aktualisieren: Einzel-Refresh pro Feed und Bulk-Refresh fuer faellige Feeds
+- Automatisierung: Geplanter Abruf ueber Laravel Scheduler (alle 10 Minuten)
+
+Technisch besteht das Projekt aus einem Laravel-Backend (API + Feed-Ingestion) und einem Vue-Frontend (UI).
+
 ## Neu (März 2026)
 
 - Sidebar-Filter verbessert: aktiver Tag-Filter ist im Feeds-Tab direkt sichtbar.
@@ -15,6 +27,10 @@ RSS Reader MVP mit Laravel API, Vue Frontend und PostgreSQL in Docker.
 - frontend: Vue 3 + Vite UI
 - docker-compose.yml: Lokale PostgreSQL-Instanz
 - Makefile: Vereinfachte Befehle fuer lokales Testen
+
+## Projekt-Notizen fuer Copilot
+
+Eine kompakte technische Notiz fuer die Arbeit im Projekt liegt in `COPILOT_CONTEXT.md`.
 
 ## Voraussetzungen
 

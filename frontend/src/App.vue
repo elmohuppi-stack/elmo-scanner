@@ -1,8 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const THEME_STORAGE_KEY = "elmo-scanner-theme";
 const BULK_REFRESH_STALE_MINUTES = 5;
+const MOBILE_LAYOUT_QUERY = "(max-width: 1020px)";
+const MOBILE_HEADER_COLLAPSE_THRESHOLD = 96;
+const MOBILE_HEADER_EXPAND_THRESHOLD = 44;
 
 function resolveInitialTheme() {
   if (typeof window === "undefined") {
@@ -43,11 +46,13 @@ const loadingFeedId = ref(null);
 const message = ref("");
 const error = ref("");
 const selectedFeedId = ref(null);
+const isMobileLayout = ref(false);
+const isMobileHeaderCollapsed = ref(false);
 const contentRef = ref(null);
+const sourceListRef = ref(null);
 const sidebarTab = ref("feeds");
 const activeTag = ref("");
 const draggedFeed = ref(null);
-const feedSearch = ref("");
 const editingFeed = ref(null);
 const editForm = ref({ url: "", title: "" });
 const deletingFeed = ref(null);
@@ -59,6 +64,7 @@ const previewReader = ref(null);
 const previewLoading = ref(false);
 const failedFaviconHosts = ref(new Set());
 let previewRequestId = 0;
+let mobileLayoutMediaQuery = null;
 
 const themeLabel = computed(() =>
   theme.value === "dark" ? "Hellmodus aktivieren" : "Dark Mode aktivieren",
@@ -129,6 +135,74 @@ const feedCards = computed(() =>
       return entry.items.length > 0;
     }),
 );
+
+const activeFeedCardId = computed(() => {
+  const availableIds = feedCards.value.map((entry) => entry.feed.id);
+
+  if (availableIds.length === 0) {
+    return null;
+  }
+
+  if (selectedFeedId.value && availableIds.includes(selectedFeedId.value)) {
+    return selectedFeedId.value;
+  }
+
+  return availableIds[0];
+});
+
+const visibleFeedCards = computed(() => {
+  if (!isMobileLayout.value) {
+    return feedCards.value;
+  }
+
+  if (!activeFeedCardId.value) {
+    return [];
+  }
+
+  return feedCards.value.filter((entry) => entry.feed.id === activeFeedCardId.value);
+});
+
+watch(activeFeedCardId, (nextFeedId) => {
+  if (nextFeedId !== selectedFeedId.value) {
+    selectedFeedId.value = nextFeedId;
+  }
+});
+
+async function centerActiveSourceItem() {
+  if (!isMobileLayout.value || sidebarTab.value !== "feeds") {
+    return;
+  }
+
+  await nextTick();
+
+  const activeFeedId = activeFeedCardId.value;
+  if (!activeFeedId) {
+    return;
+  }
+
+  const sourceListElement = sourceListRef.value;
+  if (!(sourceListElement instanceof HTMLElement)) {
+    return;
+  }
+
+  const activeButton = sourceListElement.querySelector(
+    `.source-item[data-feed-id="${activeFeedId}"]`,
+  );
+
+  if (!(activeButton instanceof HTMLElement)) {
+    return;
+  }
+
+  activeButton.scrollIntoView({
+    behavior: "smooth",
+    inline: "center",
+    block: "nearest",
+  });
+}
+
+watch([activeFeedCardId, isMobileLayout, sidebarTab], () => {
+  centerActiveSourceItem();
+});
 
 const tagStats = computed(() => {
   const counts = new Map();
@@ -209,9 +283,38 @@ async function apiRequest(path, options = {}) {
     ...options,
   });
 
+  const contentType = response.headers.get("content-type") || "";
+
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body || `Request failed (${response.status})`);
+
+    if (contentType.includes("application/json")) {
+      try {
+        const parsed = JSON.parse(body);
+        const message = parsed?.message || parsed?.error;
+        throw new Error(
+          message || `Request failed (${response.status} ${response.statusText})`,
+        );
+      } catch {
+        throw new Error(`Request failed (${response.status} ${response.statusText})`);
+      }
+    }
+
+    if (contentType.includes("text/html")) {
+      throw new Error(
+        `Server antwortet mit HTML statt JSON (${response.status} ${response.statusText}). Pruefe API-URL und Backend-Status.`,
+      );
+    }
+
+    throw new Error(
+      body?.trim() || `Request failed (${response.status} ${response.statusText})`,
+    );
+  }
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `Unerwartete Antwort vom Server (${response.status} ${response.statusText}).`,
+    );
   }
 
   return response.json();
@@ -579,7 +682,7 @@ function getFeedFetchLabel(feed) {
 }
 
 const filteredFeeds = computed(() => {
-  const query = feedSearch.value.trim().toLowerCase();
+  const query = search.value.trim().toLowerCase();
   if (!query) return feeds.value;
   return feeds.value.filter((feed) => {
     const title = (feed.title || "").toLowerCase();
@@ -672,6 +775,19 @@ function openArticleInNewTab() {
   }
 
   window.open(previewItem.value.url, "_blank", "noopener,noreferrer");
+}
+
+function getDisplayCategories(item) {
+  if (!Array.isArray(item?.categories)) {
+    return [];
+  }
+
+  return item.categories
+    .map((category) => String(category || "").trim())
+    .filter(
+      (category) =>
+        category !== "" && category.toLowerCase() !== "uncategorized",
+    );
 }
 
 function openEditModal(feed) {
@@ -780,24 +896,70 @@ function handleKeydown(e) {
   }
 }
 
+function handleMobileLayoutChange(event) {
+  isMobileLayout.value = event.matches;
+
+  if (!event.matches) {
+    isMobileHeaderCollapsed.value = false;
+  }
+}
+
+function handleWindowScroll() {
+  if (!isMobileLayout.value || sidebarTab.value !== "feeds") {
+    isMobileHeaderCollapsed.value = false;
+    return;
+  }
+
+  const scrollTop = window.scrollY;
+
+  if (isMobileHeaderCollapsed.value) {
+    if (scrollTop <= MOBILE_HEADER_EXPAND_THRESHOLD) {
+      isMobileHeaderCollapsed.value = false;
+    }
+
+    return;
+  }
+
+  if (scrollTop >= MOBILE_HEADER_COLLAPSE_THRESHOLD) {
+    isMobileHeaderCollapsed.value = true;
+  }
+}
+
 onMounted(() => {
   bootstrap();
   window.addEventListener("keydown", handleKeydown);
+  window.addEventListener("scroll", handleWindowScroll, { passive: true });
+
+  mobileLayoutMediaQuery = window.matchMedia(MOBILE_LAYOUT_QUERY);
+  isMobileLayout.value = mobileLayoutMediaQuery.matches;
+  mobileLayoutMediaQuery.addEventListener("change", handleMobileLayoutChange);
+  handleWindowScroll();
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
+  window.removeEventListener("scroll", handleWindowScroll);
+
+  if (mobileLayoutMediaQuery) {
+    mobileLayoutMediaQuery.removeEventListener("change", handleMobileLayoutChange);
+  }
 });
 </script>
 
 <template>
   <main class="layout">
-    <aside class="sidebar panel">
+    <aside
+      class="sidebar panel"
+      :class="{
+        'sidebar--sticky-mobile': sidebarTab === 'feeds',
+        'sidebar--mobile-collapsed':
+          sidebarTab === 'feeds' && isMobileHeaderCollapsed,
+      }"
+    >
       <div class="sidebar-head">
         <div class="sidebar-title-row">
           <div>
-            <p class="overline">Elmo Scanner</p>
-            <h1>Feed Quellen</h1>
+            <h1>Elmo Scanner</h1>
             <p class="subtitle">{{ feeds.length }} Quellen</p>
           </div>
           <button
@@ -812,44 +974,50 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="sidebar-tabs">
-        <button
-          class="tab-btn"
-          :class="{
-            active: sidebarTab === 'feeds',
-            'tab-btn--has-filter': activeTag,
-          }"
-          @click="setSidebarTab('feeds')"
-          :title="activeTag ? `Filter aktiv: ${activeTag}` : undefined"
-        >
-          Feeds
-          <span v-if="activeTag" class="filter-badge" aria-label="Filter aktiv"
-            >🏷️</span
+      <div class="sidebar-mobile-header">
+        <div class="sidebar-tabs">
+          <button
+            class="tab-btn"
+            :class="{
+              active: sidebarTab === 'feeds',
+              'tab-btn--has-filter': activeTag,
+            }"
+            @click="setSidebarTab('feeds')"
+            :title="activeTag ? `Filter aktiv: ${activeTag}` : undefined"
           >
-        </button>
-        <button
-          class="tab-btn"
-          :class="{ active: sidebarTab === 'filters' }"
-          @click="setSidebarTab('filters')"
-        >
-          Filter
-        </button>
-        <button
-          class="tab-btn"
-          :class="{ active: sidebarTab === 'new-feed' }"
-          @click="setSidebarTab('new-feed')"
-        >
-          Neuer Feed
-        </button>
-      </div>
+            Feeds
+            <span
+              v-if="activeTag"
+              class="filter-badge"
+              aria-label="Filter aktiv"
+              >🏷️</span
+            >
+          </button>
+          <button
+            class="tab-btn"
+            :class="{ active: sidebarTab === 'filters' }"
+            @click="setSidebarTab('filters')"
+          >
+            Filter
+          </button>
+          <button
+            class="tab-btn tab-btn--new-feed"
+            :class="{ active: sidebarTab === 'new-feed' }"
+            @click="setSidebarTab('new-feed')"
+          >
+            Neuer Feed
+          </button>
+        </div>
 
-      <section v-if="sidebarTab === 'feeds'" class="sidebar-section">
-        <div class="feeds-toolbar">
+        <div
+          class="feeds-toolbar feeds-toolbar--header"
+          :class="{ 'feeds-toolbar--desktop-only-feeds': sidebarTab !== 'feeds' }"
+        >
           <input
             ref="searchInputRef"
-            v-model="feedSearch"
+            v-model="search"
             type="text"
-            placeholder="Feeds durchsuchen... (Cmd+K)"
+            placeholder="Suche in Feeds und Artikeln... (Cmd+K)"
             class="feed-search"
           />
           <button
@@ -878,11 +1046,14 @@ onUnmounted(() => {
             </span>
           </button>
         </div>
+      </div>
+
+      <section v-if="sidebarTab === 'feeds'" class="sidebar-section">
         <div v-if="fetchingAll" class="refresh-status-message" role="status">
           <span class="spinner" aria-hidden="true"></span>
           <span>Feeds werden aktualisiert…</span>
         </div>
-        <ul class="source-list">
+        <ul ref="sourceListRef" class="source-list">
           <li
             v-for="feed in filteredFeeds"
             :key="feed.id"
@@ -894,8 +1065,9 @@ onUnmounted(() => {
           >
             <button
               class="source-item"
+              :data-feed-id="feed.id"
               :class="{
-                active: selectedFeedId === feed.id,
+                active: activeFeedCardId === feed.id,
                 'source-item--disabled': isFeedDisabledByTagFilter(feed.id),
                 'source-item--stale': isFeedEligibleForBulkRefresh(feed),
                 'source-item--error': isFeedStaleWithError(feed),
@@ -914,28 +1086,7 @@ onUnmounted(() => {
             >
               <div class="source-item-title-row">
                 <strong>{{ feed.title || "Ohne Titel" }}</strong>
-                <span
-                  v-if="isFeedEligibleForBulkRefresh(feed)"
-                  class="stale-indicator"
-                  aria-hidden="true"
-                  >·</span
-                >
               </div>
-              <span class="source-item-meta">
-                <span v-if="activeTag"
-                  >{{ filteredTagItemCountByFeed[feed.id] || 0 }} von
-                  {{ (feedItems[feed.id] || []).length }} Artikel</span
-                >
-                <span v-else
-                  >{{ (feedItems[feed.id] || []).length }} Artikel</span
-                >
-                <span
-                  class="source-item-time"
-                  :title="`Zuletzt aktualisiert: ${getFeedFetchLabel(feed)}`"
-                >
-                  {{ getFeedFetchLabel(feed) }}
-                </span>
-              </span>
             </button>
             <div class="feed-actions">
               <button
@@ -999,26 +1150,13 @@ onUnmounted(() => {
     </aside>
 
     <section ref="contentRef" class="content">
-      <header class="content-head panel">
-        <div>
-          <h2>Feed Cards</h2>
-          <p v-if="activeTag" class="active-filter-label">
-            Aktiver Tag: {{ activeTag }}
-          </p>
-        </div>
-        <input
-          v-model="search"
-          placeholder="Suche in allen Feed-Items"
-          type="search"
-        />
-      </header>
 
       <div v-if="feedCards.length === 0" class="panel empty">
         Keine Feeds vorhanden.
       </div>
 
       <article
-        v-for="entry in feedCards"
+        v-for="entry in visibleFeedCards"
         :id="`feed-card-${entry.feed.id}`"
         :key="entry.feed.id"
         class="feed-card panel"
@@ -1045,12 +1183,6 @@ onUnmounted(() => {
             <span
               >{{ entry.items.length }} von {{ entry.totalItems }} Items</span
             >
-            <button
-              :disabled="loadingFeedId === entry.feed.id"
-              @click="fetchFeed(entry.feed.id)"
-            >
-              Aktualisieren
-            </button>
           </div>
         </header>
 
@@ -1099,24 +1231,21 @@ onUnmounted(() => {
                     }}</span>
                   </div>
                   <ul
-                    v-if="
-                      Array.isArray(item.categories) &&
-                      item.categories.length > 0
-                    "
+                    v-if="getDisplayCategories(item).length > 0"
                     class="tag-list"
                   >
                     <li
-                      v-for="category in item.categories.slice(0, 2)"
+                      v-for="category in getDisplayCategories(item).slice(0, 1)"
                       :key="`${item.id}-${category}`"
                     >
                       {{ category }}
                     </li>
                     <li
-                      v-if="item.categories.length > 2"
+                      v-if="getDisplayCategories(item).length > 1"
                       :key="`${item.id}-more-categories`"
-                      :title="`${item.categories.length - 2} weitere Kategorien`"
+                      :title="`${getDisplayCategories(item).length - 1} weitere Kategorien`"
                     >
-                      +{{ item.categories.length - 2 }}
+                      +{{ getDisplayCategories(item).length - 1 }}
                     </li>
                   </ul>
                 </div>
