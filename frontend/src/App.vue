@@ -159,7 +159,9 @@ const visibleFeedCards = computed(() => {
     return [];
   }
 
-  return feedCards.value.filter((entry) => entry.feed.id === activeFeedCardId.value);
+  return feedCards.value.filter(
+    (entry) => entry.feed.id === activeFeedCardId.value,
+  );
 });
 
 watch(activeFeedCardId, (nextFeedId) => {
@@ -293,10 +295,13 @@ async function apiRequest(path, options = {}) {
         const parsed = JSON.parse(body);
         const message = parsed?.message || parsed?.error;
         throw new Error(
-          message || `Request failed (${response.status} ${response.statusText})`,
+          message ||
+            `Request failed (${response.status} ${response.statusText})`,
         );
       } catch {
-        throw new Error(`Request failed (${response.status} ${response.statusText})`);
+        throw new Error(
+          `Request failed (${response.status} ${response.statusText})`,
+        );
       }
     }
 
@@ -307,7 +312,8 @@ async function apiRequest(path, options = {}) {
     }
 
     throw new Error(
-      body?.trim() || `Request failed (${response.status} ${response.statusText})`,
+      body?.trim() ||
+        `Request failed (${response.status} ${response.statusText})`,
     );
   }
 
@@ -941,7 +947,10 @@ onUnmounted(() => {
   window.removeEventListener("scroll", handleWindowScroll);
 
   if (mobileLayoutMediaQuery) {
-    mobileLayoutMediaQuery.removeEventListener("change", handleMobileLayoutChange);
+    mobileLayoutMediaQuery.removeEventListener(
+      "change",
+      handleMobileLayoutChange,
+    );
   }
 });
 </script>
@@ -1011,7 +1020,9 @@ onUnmounted(() => {
 
         <div
           class="feeds-toolbar feeds-toolbar--header"
-          :class="{ 'feeds-toolbar--desktop-only-feeds': sidebarTab !== 'feeds' }"
+          :class="{
+            'feeds-toolbar--desktop-only-feeds': sidebarTab !== 'feeds',
+          }"
         >
           <input
             ref="searchInputRef"
@@ -1150,7 +1161,6 @@ onUnmounted(() => {
     </aside>
 
     <section ref="contentRef" class="content">
-
       <div v-if="feedCards.length === 0" class="panel empty">
         Keine Feeds vorhanden.
       </div>
