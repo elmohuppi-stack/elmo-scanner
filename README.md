@@ -1,6 +1,6 @@
 # Elmo Scanner
 
-RSS Reader MVP mit Laravel API, Vue Frontend und PostgreSQL in Docker.
+RSS Reader MVP mit Laravel API, Vue Frontend und SQLite.
 
 ## Was macht diese App?
 
@@ -25,7 +25,7 @@ Technisch besteht das Projekt aus einem Laravel-Backend (API + Feed-Ingestion) u
 
 - backend: Laravel API, Scheduler, Feed-Ingestion
 - frontend: Vue 3 + Vite UI
-- docker-compose.yml: Lokale PostgreSQL-Instanz
+- docker-compose.yml: Hetzner-Deploy-Stack fuer Frontend + Backend
 - Makefile: Vereinfachte Befehle fuer lokales Testen
 
 ## Projekt-Notizen fuer Copilot
@@ -34,10 +34,10 @@ Eine kompakte technische Notiz fuer die Arbeit im Projekt liegt in `COPILOT_CONT
 
 ## Voraussetzungen
 
-- Docker + Docker Compose
 - PHP 8.2+
 - Composer
 - Node.js 20+ und npm
+- optional: Docker + Docker Compose fuer den Hetzner-Deploy-Stack
 
 ## Schnellstart (lokal)
 
@@ -47,19 +47,20 @@ Eine kompakte technische Notiz fuer die Arbeit im Projekt liegt in `COPILOT_CONT
 make setup
 ```
 
-2. Backend starten (Terminal 1):
+2. Entwicklung starten:
+
+```bash
+make dev
+```
+
+Alternativ getrennt in zwei Terminals:
 
 ```bash
 make backend-dev
-```
-
-3. Frontend starten (Terminal 2):
-
-```bash
 make frontend-dev
 ```
 
-4. App oeffnen:
+3. App oeffnen:
 
 - Frontend: http://127.0.0.1:5173
 - Backend API: http://127.0.0.1:8000
@@ -68,11 +69,16 @@ make frontend-dev
 
 ```bash
 make help
+make setup
+make dev
 make db-up
-make db-down
+make db-reset
 make migrate
 make seed
 make fetch
+make health
+make docker-up
+make docker-down
 make test
 ```
 
@@ -83,30 +89,33 @@ make test
 - POST /api/admin/feeds/{feed}/fetch
 - GET /api/articles
 
-## Lokaler Testablauf
+## Lokaler Ablauf mit SQLite
 
-1. Datenbank starten:
+1. SQLite-Datei anlegen oder zuruecksetzen:
 
 ```bash
 make db-up
+# oder komplett neu
+make db-reset
 ```
 
-2. Migrationen und Seeds:
+2. Migrationen und Seeds ausfuehren:
 
 ```bash
 make migrate
 make seed
 ```
 
-3. Einmaliger Feed-Import:
+3. Entwicklung starten:
 
 ```bash
-make fetch
+make dev
 ```
 
 4. API schnell pruefen:
 
 ```bash
+make health
 curl http://127.0.0.1:8000/api/feeds
 curl http://127.0.0.1:8000/api/articles
 curl -X POST http://127.0.0.1:8000/api/admin/feeds/1/fetch
@@ -114,81 +123,52 @@ curl -X POST http://127.0.0.1:8000/api/admin/feeds/1/fetch
 
 ## Hinweise
 
-- Die PostgreSQL-Zugangsdaten sind in docker-compose.yml definiert und in backend/.env bereits passend konfiguriert.
+- Das Backend nutzt jetzt standardmaessig SQLite ueber `backend/database/database.sqlite`.
 - Der Scheduler fuer periodisches Abrufen ist in backend/routes/console.php hinterlegt.
-- Falls du die Datenbank komplett zuruecksetzen willst: make db-reset
+- Falls du die lokale Datenbank komplett zuruecksetzen willst: `make db-reset`
 
-## Railway Deployment
+## Hetzner Deployment
 
-Dieses Projekt wird auf Railway nicht ueber GitHub-Autodeploy aus dem Repo-Root deployed, sondern gezielt pro Service aus den jeweiligen Unterordnern.
+Dieses Projekt wird auf dem gemeinsamen Hetzner-Server per `docker compose`, Host-`nginx` und separaten Subdomains deployed.
 
-### Wichtig
+### Ziel-Domains
 
-- Das Repo-Root kann in Railway auf den Service `Postgres` gelinkt sein.
-- Ein `railway up` aus dem Projekt-Root kann dann gegen den DB-Service laufen und Fehler wie `Script start.sh not found` oder `Railpack could not determine how to build the app.` ausloesen.
-- Deshalb immer aus dem passenden Service-Verzeichnis deployen.
+- Frontend: `https://elmo-scanner.elmarhepp.de`
+- API: `https://elmo-scanner-api.elmarhepp.de`
 
-### Backend deployen
-
-```bash
-cd backend
-railway up . --service backend --path-as-root --detach
-```
-
-Hinweise:
-
-- Das Backend wird ueber `backend/Dockerfile` gebaut.
-- Beim Container-Start laufen die Migrationen automatisch ueber `php artisan migrate --force`.
-- Die produktive Backend-URL ist:
-
-```text
-https://backend-production-9a1c.up.railway.app
-```
-
-### Frontend deployen
+### Server-Pfad
 
 ```bash
-cd frontend
-railway up . --service frontend --path-as-root --detach
+/var/www/elmo-scanner
 ```
 
-Hinweise:
+### Deploy-Ablauf
 
-- Das Frontend wird ueber `frontend/Dockerfile` gebaut.
-- In Produktion darf das Frontend nicht nur relative `/api/...` Requests verwenden, wenn es auf einer eigenen Domain laeuft.
-- Die App muss auf die Railway-Backend-URL zeigen, sonst liefert der Frontend-Host HTML statt JSON und der Browser meldet `Unexpected token '<'`.
+```bash
+ssh elmarhepp
+cd /var/www/elmo-scanner
+cp .env.example .env
+cp backend/.env.production.example backend/.env.production
+
+make docker-up
+```
+
+Danach wird auf dem Host eine Nginx-Site angelegt, die auf diese lokalen Container-Ports zeigt:
+
+- Frontend: `127.0.0.1:3011`
+- API: `127.0.0.1:3012`
 
 ### Produktions-Check
 
-Backend direkt pruefen:
-
 ```bash
-curl -i https://backend-production-9a1c.up.railway.app/api/feeds?per_page=1
+curl -I https://elmo-scanner.elmarhepp.de/
+curl -i https://elmo-scanner-api.elmarhepp.de/api/health
+curl -H "Origin: https://elmo-scanner.elmarhepp.de" -i https://elmo-scanner-api.elmarhepp.de/api/feeds?per_page=1
 ```
 
-Frontend direkt pruefen:
+### Wichtige Hinweise
 
-```bash
-curl -I https://frontend-production-e7bf.up.railway.app/
-```
-
-Logs ansehen:
-
-```bash
-cd backend
-railway logs --service backend --build -n 100
-railway logs --service backend --deployment -n 100
-
-cd ../frontend
-railway logs --service frontend --build -n 100
-railway logs --service frontend --deployment -n 100
-```
-
-### Bekannte Stolpersteine
-
-- `start.sh not found`:
-  meist wurde gegen den falschen Railway-Service deployt.
-- `Unexpected token '<'` im Frontend:
-  das Frontend spricht die falsche URL an und bekommt HTML statt JSON.
-- `Deploy failed` in der CLI trotz erfolgreichem Build:
-  immer die Build- und Deployment-Logs des richtigen Service pruefen, nicht nur die CLI-Zeile.
+- Lokal ist **kein Postgres und kein Docker** mehr noetig; SQLite reicht aus.
+- Das Frontend liest die API-URL ueber `frontend/.env.production` (`VITE_API_BASE_URL`).
+- Das Backend stellt fuer Monitoring und Reverse-Proxy-Checks einen JSON-Health-Endpoint unter `/api/health` bereit.
+- `docker-compose.yml` ist fuer die Hetzner-Multi-App-Struktur vorbereitet und bindet nur an `127.0.0.1`.

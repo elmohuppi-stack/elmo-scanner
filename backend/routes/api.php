@@ -2,7 +2,12 @@
 
 use App\Http\Controllers\Api\ArticleController;
 use App\Http\Controllers\Api\FeedController;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/health', fn(): JsonResponse => response()->json([
+    'status' => 'ok',
+]));
 
 Route::get('/feeds', [FeedController::class, 'index']);
 Route::post('/feeds', [FeedController::class, 'store']);

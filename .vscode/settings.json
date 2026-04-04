@@ -30,6 +30,16 @@
       "approve": true,
       "matchCommandLine": true
     },
-    "npm run build": true
+    "npm run build": true,
+    "git remote": true,
+    "ssh": true,
+    "/^cd /Users/elmarhepp/workspace/elmo-scanner/backend && php artisan test --filter=HealthEndpointTest$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^cd /Users/elmarhepp/workspace/elmo-scanner && make db-up && cd backend && php artisan migrate --force && php artisan db:seed --force && cd \\.\\. && docker compose config$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }
