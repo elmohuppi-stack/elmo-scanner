@@ -166,6 +166,26 @@ curl -i https://elmo-scanner-api.elmarhepp.de/api/health
 curl -H "Origin: https://elmo-scanner.elmarhepp.de" -i https://elmo-scanner-api.elmarhepp.de/api/feeds?per_page=1
 ```
 
+### Kuenftige Updates auf Hetzner
+
+Nach weiteren Aenderungen reicht in der Regel dieser Ablauf:
+
+```bash
+ssh elmarhepp
+cd /var/www/elmo-scanner
+git pull --ff-only
+docker compose up -d --build
+curl -I https://elmo-scanner.elmarhepp.de/
+curl -i https://elmo-scanner-api.elmarhepp.de/api/health
+```
+
+### Zertifikat / Browser-Hinweis
+
+- Das Let's-Encrypt-Zertifikat ist gueltig fuer `elmo-scanner.elmarhepp.de` und `elmo-scanner-api.elmarhepp.de`.
+- Wenn der Browser direkt nach dem ersten Livegang noch einen Zertifikatsfehler zeigt, liegt das oft an gecachtem DNS oder einer alten TLS-Session.
+- Dann bitte die Seite hart neu laden, ein privates Fenster testen oder den Browser einmal komplett neu starten.
+- Wichtig: die App nur ueber die exakten HTTPS-Domains aufrufen, nicht ueber die Server-IP.
+
 ### Wichtige Hinweise
 
 - Lokal ist **kein Postgres und kein Docker** mehr noetig; SQLite reicht aus.
