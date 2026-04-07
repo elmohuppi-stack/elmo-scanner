@@ -2,10 +2,17 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const THEME_STORAGE_KEY = "elmo-scanner-theme";
+const COOKIE_NOTICE_STORAGE_KEY = "elmo-scanner-cookie-notice";
 const BULK_REFRESH_STALE_MINUTES = 5;
 const MOBILE_LAYOUT_QUERY = "(max-width: 1020px)";
 const MOBILE_HEADER_COLLAPSE_THRESHOLD = 96;
 const MOBILE_HEADER_EXPAND_THRESHOLD = 44;
+const LEGAL_SECTIONS = {
+  impressum: "Impressum",
+  datenschutz: "Datenschutzerklaerung",
+  cookies: "Cookie-Hinweise",
+};
+const LEGAL_SECTION_KEYS = Object.keys(LEGAL_SECTIONS);
 
 function resolveInitialTheme() {
   if (typeof window === "undefined") {
@@ -36,6 +43,15 @@ const apiBase =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
   "";
+const legalName = import.meta.env.VITE_LEGAL_NAME || "Elmar Hepp";
+const legalEmail = import.meta.env.VITE_LEGAL_EMAIL || "elmar.hepp@gmail.com";
+const legalAddressLine1 =
+  import.meta.env.VITE_LEGAL_ADDRESS_LINE_1 || "Richard-Wagner-Str. 25";
+const legalAddressLine2 =
+  import.meta.env.VITE_LEGAL_ADDRESS_LINE_2 || "76744 Wörth am Rhein";
+const legalCountry = import.meta.env.VITE_LEGAL_COUNTRY || "Deutschland";
+const legalContentResponsible =
+  import.meta.env.VITE_LEGAL_CONTENT_RESPONSIBLE || legalName;
 
 const feeds = ref([]);
 const feedItems = ref({});
@@ -61,12 +77,19 @@ const theme = ref(resolveInitialTheme());
 const previewItem = ref(null);
 const previewReader = ref(null);
 const previewLoading = ref(false);
-const failedFaviconHosts = ref(new Set());
+const activeLegalSection = ref("");
+const showCookieNotice = ref(false);
+const legalCardRef = ref(null);
+const currentYear = new Date().getFullYear();
 let previewRequestId = 0;
 let mobileLayoutMediaQuery = null;
 
 const themeLabel = computed(() =>
   theme.value === "dark" ? "Hellmodus aktivieren" : "Dark Mode aktivieren",
+);
+
+const legalSectionTitle = computed(
+  () => LEGAL_SECTIONS[activeLegalSection.value] || "Rechtliche Hinweise",
 );
 
 const previewBodyHtml = computed(() => {
@@ -649,29 +672,55 @@ function getFeedBadge(feed) {
     .join("");
 }
 
-function getFeedFaviconUrl(feed) {
-  const host = getFeedHost(feed);
-
-  if (!host) {
-    return "";
-  }
-
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
-}
-
-function hasFeedFavicon(feed) {
-  const host = getFeedHost(feed);
-  return host !== "" && !failedFaviconHosts.value.has(host);
-}
-
-function handleFeedFaviconError(feed) {
-  const host = getFeedHost(feed);
-
-  if (!host || failedFaviconHosts.value.has(host)) {
+async function openLegalSection(section) {
+  if (!LEGAL_SECTION_KEYS.includes(section)) {
     return;
   }
 
-  failedFaviconHosts.value = new Set([...failedFaviconHosts.value, host]);
+  activeLegalSection.value = section;
+
+  if (typeof window !== "undefined") {
+    const nextUrl = `${window.location.pathname}${window.location.search}#${section}`;
+    window.history.replaceState({}, "", nextUrl);
+  }
+
+  await nextTick();
+  legalCardRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeLegalSection() {
+  activeLegalSection.value = "";
+
+  if (typeof window !== "undefined") {
+    const currentHash = window.location.hash.replace(/^#/, "");
+    if (LEGAL_SECTION_KEYS.includes(currentHash)) {
+      const nextUrl = `${window.location.pathname}${window.location.search}`;
+      window.history.replaceState({}, "", nextUrl);
+    }
+  }
+}
+
+function handleHashChange() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentHash = window.location.hash.replace(/^#/, "");
+  activeLegalSection.value = LEGAL_SECTION_KEYS.includes(currentHash)
+    ? currentHash
+    : "";
+}
+
+function acceptCookieNotice() {
+  showCookieNotice.value = false;
+
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(COOKIE_NOTICE_STORAGE_KEY, "accepted");
+  }
+}
+
+function openCookieDetails() {
+  openLegalSection("cookies");
 }
 
 function getItemFeed(item, fallbackFeed = null) {
@@ -934,16 +983,21 @@ onMounted(() => {
   bootstrap();
   window.addEventListener("keydown", handleKeydown);
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
+  window.addEventListener("hashchange", handleHashChange);
 
   mobileLayoutMediaQuery = window.matchMedia(MOBILE_LAYOUT_QUERY);
   isMobileLayout.value = mobileLayoutMediaQuery.matches;
   mobileLayoutMediaQuery.addEventListener("change", handleMobileLayoutChange);
+  showCookieNotice.value =
+    window.localStorage.getItem(COOKIE_NOTICE_STORAGE_KEY) !== "accepted";
+  handleHashChange();
   handleWindowScroll();
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   window.removeEventListener("scroll", handleWindowScroll);
+  window.removeEventListener("hashchange", handleHashChange);
 
   if (mobileLayoutMediaQuery) {
     mobileLayoutMediaQuery.removeEventListener(
@@ -1204,23 +1258,14 @@ onUnmounted(() => {
                 :src="item.image_url"
                 :alt="item.title"
                 loading="lazy"
+                referrerpolicy="no-referrer"
                 @click="openArticlePreview(item)"
               />
 
               <div class="item-body">
                 <div class="item-top">
                   <div class="item-source-line">
-                    <img
-                      v-if="hasFeedFavicon(getItemFeed(item, entry.feed))"
-                      class="source-favicon source-favicon-small"
-                      :src="getFeedFaviconUrl(getItemFeed(item, entry.feed))"
-                      :alt="`${getFeedLabel(getItemFeed(item, entry.feed))} Icon`"
-                      loading="lazy"
-                      @error="
-                        handleFeedFaviconError(getItemFeed(item, entry.feed))
-                      "
-                    />
-                    <span v-else class="source-badge source-badge-small">{{
+                    <span class="source-badge source-badge-small">{{
                       getFeedBadge(getItemFeed(item, entry.feed))
                     }}</span>
                     <span
@@ -1276,6 +1321,157 @@ onUnmounted(() => {
 
       <p v-if="message" class="message panel">{{ message }}</p>
       <p v-if="error" class="error panel">{{ error }}</p>
+
+      <footer class="site-footer panel">
+        <div>
+          <p class="overline">Rechtliches</p>
+          <h2>Impressum, Datenschutz & Cookies</h2>
+          <p class="site-footer-meta">
+            Aktuell werden keine Analyse- oder Marketing-Cookies eingesetzt ·
+            {{ currentYear }}.
+          </p>
+        </div>
+
+        <div class="site-footer-links">
+          <button
+            type="button"
+            class="site-footer-link"
+            @click="openLegalSection('impressum')"
+          >
+            Impressum
+          </button>
+          <button
+            type="button"
+            class="site-footer-link"
+            @click="openLegalSection('datenschutz')"
+          >
+            Datenschutz
+          </button>
+          <button
+            type="button"
+            class="site-footer-link"
+            @click="openLegalSection('cookies')"
+          >
+            Cookie-Hinweise
+          </button>
+        </div>
+      </footer>
+
+      <section
+        v-if="activeLegalSection"
+        :id="activeLegalSection"
+        ref="legalCardRef"
+        class="legal-card panel"
+      >
+        <div class="legal-card-head">
+          <div>
+            <p class="overline">Rechtliche Informationen</p>
+            <h2>{{ legalSectionTitle }}</h2>
+          </div>
+          <button type="button" class="legal-close" @click="closeLegalSection">
+            Schliessen
+          </button>
+        </div>
+
+        <div v-if="activeLegalSection === 'impressum'" class="legal-copy">
+          <p><strong>Angaben gemaess § 5 DDG</strong></p>
+          <p>
+            Diese Website ist ein privates Webprojekt von
+            <strong>{{ legalName }}</strong
+            >.
+          </p>
+          <ul class="legal-list">
+            <li><strong>Verantwortlicher:</strong> {{ legalName }}</li>
+            <li>
+              <strong>Ladungsfaehige Anschrift:</strong><br />
+              {{ legalAddressLine1 }}<br />
+              {{ legalAddressLine2 }}<br />
+              {{ legalCountry }}
+            </li>
+            <li>
+              <strong>E-Mail:</strong>
+              <a :href="`mailto:${legalEmail}`">{{ legalEmail }}</a>
+            </li>
+          </ul>
+          <p>
+            <strong
+              >Verantwortlich fuer journalistisch-redaktionelle Inhalte gemaess
+              § 18 Abs. 2 MStV:</strong
+            >
+            {{ legalContentResponsible }}, Anschrift wie oben.
+          </p>
+          <p>
+            Angezeigte Artikeltitel, Vorschaubilder und Verlinkungen stammen aus
+            den jeweils eingebundenen RSS-/Atom-Feeds der jeweiligen Anbieter.
+          </p>
+        </div>
+
+        <div
+          v-else-if="activeLegalSection === 'datenschutz'"
+          class="legal-copy"
+        >
+          <p>
+            Beim Aufruf der Website werden serverseitig technisch notwendige
+            Verbindungsdaten verarbeitet, um die Seite auszuliefern und den
+            sicheren Betrieb zu gewaehrleisten.
+          </p>
+          <ul class="legal-list">
+            <li>
+              <strong>Server-Logs:</strong> IP-Adresse, Zeitpunkt, aufgerufene
+              URL, Browser-Informationen und Statuscode.
+            </li>
+            <li>
+              <strong>Lokale Browser-Speicherung:</strong> Gespeichert werden
+              nur die Theme-Einstellung (`elmo-scanner-theme`) und der Status
+              dieses Hinweises (`elmo-scanner-cookie-notice`).
+            </li>
+            <li>
+              <strong>Externe Inhalte:</strong> Beim Laden von Artikelbildern
+              oder beim Oeffnen externer Quellen kann Ihre IP-Adresse an die
+              jeweiligen Feed- oder Medienanbieter uebermittelt werden.
+            </li>
+          </ul>
+          <p>
+            Es werden derzeit keine Analyse-, Tracking- oder Marketing-Tools
+            eingesetzt. Unnoetige Drittanbieter-Anfragen fuer Favicons wurden
+            aus Datenschutzgruenden entfernt.
+          </p>
+          <p>
+            Ihnen stehen nach Massgabe der DSGVO insbesondere Rechte auf
+            Auskunft, Berichtigung, Loeschung und Einschraenkung der
+            Verarbeitung zu. Anfragen koennen ueber die im Impressum genannte
+            E-Mail-Adresse gestellt werden.
+          </p>
+        </div>
+
+        <div v-else class="legal-copy">
+          <p>
+            Diese Website verwendet derzeit keine Analyse- oder
+            Marketing-Cookies.
+          </p>
+          <ul class="legal-list">
+            <li>
+              <strong>Technisch notwendige Speicherung:</strong> Die
+              Theme-Auswahl wird lokal im Browser gespeichert, damit die Seite
+              beim naechsten Besuch in der gewaehlten Ansicht startet.
+            </li>
+            <li>
+              <strong>Hinweis-Speicherung:</strong> Der Banner merkt sich lokal,
+              dass Sie den Cookie- und Datenschutzhinweis bereits gesehen haben.
+            </li>
+          </ul>
+          <p>
+            Falls spaeter optionale Tracking-, Analyse- oder Werbedienste
+            hinzukommen, sollte vor deren Aktivierung eine ausdrueckliche
+            Einwilligung eingeholt werden.
+          </p>
+        </div>
+
+        <p class="legal-note">
+          Die Anbieterangaben werden ueber `VITE_LEGAL_*`-Variablen aus der
+          Frontend-Umgebung geladen.
+        </p>
+      </section>
     </section>
 
     <!-- Edit Feed Modal -->
@@ -1347,15 +1543,7 @@ onUnmounted(() => {
               <span class="preview-state">Interne Reader-Ansicht aktiv</span>
             </div>
             <div class="article-preview-meta">
-              <img
-                v-if="hasFeedFavicon(getItemFeed(previewItem))"
-                class="source-favicon"
-                :src="getFeedFaviconUrl(getItemFeed(previewItem))"
-                :alt="`${getFeedLabel(getItemFeed(previewItem))} Icon`"
-                loading="lazy"
-                @error="handleFeedFaviconError(getItemFeed(previewItem))"
-              />
-              <span v-else class="source-badge">{{
+              <span class="source-badge">{{
                 getFeedBadge(getItemFeed(previewItem))
               }}</span>
               <div class="article-preview-source-copy">
@@ -1399,4 +1587,37 @@ onUnmounted(() => {
       </div>
     </div>
   </main>
+
+  <div
+    v-if="showCookieNotice"
+    class="cookie-banner panel"
+    role="dialog"
+    aria-live="polite"
+    aria-label="Cookie- und Datenschutzhinweis"
+  >
+    <div class="cookie-banner-copy">
+      <strong>Cookie- & Datenschutzhinweis</strong>
+      <p>
+        Diese Website verwendet derzeit keine Tracking- oder Marketing-Cookies.
+        Gespeichert werden nur technisch notwendige Einstellungen fuer Theme und
+        diesen Hinweis.
+      </p>
+    </div>
+    <div class="cookie-banner-actions">
+      <button
+        type="button"
+        class="cookie-banner-button cookie-banner-button--secondary"
+        @click="openCookieDetails"
+      >
+        Details
+      </button>
+      <button
+        type="button"
+        class="cookie-banner-button"
+        @click="acceptCookieNotice"
+      >
+        Verstanden
+      </button>
+    </div>
+  </div>
 </template>

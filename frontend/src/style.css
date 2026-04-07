@@ -743,6 +743,144 @@ h3 {
   border-color: #d3a29b;
 }
 
+.site-footer,
+.legal-card {
+  grid-column: 1 / -1;
+}
+
+.site-footer {
+  padding: 14px 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.site-footer h2 {
+  font-size: 1.05rem;
+}
+
+.site-footer-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.site-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.site-footer-link,
+.legal-close,
+.cookie-banner-button {
+  width: auto;
+  background: var(--paper-muted);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.site-footer-link:hover,
+.legal-close:hover,
+.cookie-banner-button--secondary:hover {
+  background: var(--tab-bg);
+  color: var(--tab-ink);
+}
+
+.legal-card {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.legal-card-head {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.legal-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.legal-copy p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.legal-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.legal-list li {
+  line-height: 1.45;
+}
+
+.legal-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--paper-muted);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.cookie-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: min(760px, calc(100vw - 32px));
+  z-index: 1200;
+  padding: 14px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.cookie-banner-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.cookie-banner-copy strong {
+  font-size: 0.96rem;
+}
+
+.cookie-banner-copy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.cookie-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.cookie-banner-button {
+  white-space: nowrap;
+}
+
+.cookie-banner-button:not(.cookie-banner-button--secondary) {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.cookie-banner-button:not(.cookie-banner-button--secondary):hover {
+  background: var(--accent-strong);
+}
+
 .feeds-toolbar {
   display: flex;
   gap: 8px;
@@ -1496,6 +1634,19 @@ h3 {
   .article-reader-content {
     height: 100%;
     padding: 14px;
+  }
+
+  .cookie-banner {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cookie-banner-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 
