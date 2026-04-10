@@ -440,19 +440,30 @@ async function fetchFeed(feedId) {
   }
 }
 
-function selectFeed(feedId) {
+async function selectFeed(feedId) {
   selectedFeedId.value = feedId;
   sidebarTab.value = "feeds";
+
+  await nextTick();
+
+  const contentElement = contentRef.value;
+
+  if (isMobileLayout.value && contentElement instanceof HTMLElement) {
+    isMobileHeaderCollapsed.value = false;
+    contentElement.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+    return;
+  }
+
   const card = document.getElementById(`feed-card-${feedId}`);
 
   if (!card) {
     return;
   }
 
-  const contentElement = contentRef.value;
-  const isDesktopLayout = window.matchMedia("(min-width: 1021px)").matches;
-
-  if (isDesktopLayout && contentElement instanceof HTMLElement) {
+  if (contentElement instanceof HTMLElement) {
     const cardTop = card.offsetTop - contentElement.offsetTop;
     contentElement.scrollTo({
       top: Math.max(cardTop - 8, 0),
@@ -964,7 +975,11 @@ function handleWindowScroll() {
     return;
   }
 
-  const scrollTop = window.scrollY;
+  const contentElement = contentRef.value;
+  const scrollTop =
+    contentElement instanceof HTMLElement
+      ? contentElement.scrollTop
+      : window.scrollY;
 
   if (isMobileHeaderCollapsed.value) {
     if (scrollTop <= MOBILE_HEADER_EXPAND_THRESHOLD) {
@@ -1021,7 +1036,7 @@ onUnmounted(() => {
       <div class="sidebar-head">
         <div class="sidebar-title-row">
           <div>
-            <h1>Elmo Scanner</h1>
+            <h1>Medien Scanner</h1>
             <p class="subtitle">{{ feeds.length }} Quellen</p>
           </div>
           <button
@@ -1213,7 +1228,11 @@ onUnmounted(() => {
       </section>
     </aside>
 
-    <section ref="contentRef" class="content">
+    <section
+      ref="contentRef"
+      class="content"
+      @scroll.passive="handleWindowScroll"
+    >
       <div v-if="feedCards.length === 0" class="panel empty">
         Keine Feeds vorhanden.
       </div>

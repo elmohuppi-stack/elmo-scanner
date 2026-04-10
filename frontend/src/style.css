@@ -1379,8 +1379,16 @@ h3 {
 }
 
 @media (max-width: 1020px) {
+  #app {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
   }
 
   .sidebar {
@@ -1431,9 +1439,14 @@ h3 {
 
   .content {
     grid-template-columns: 1fr;
+    min-height: 0;
+    height: 100%;
     max-height: none;
-    overflow: visible;
+    overflow: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
     padding-right: 0;
+    padding-bottom: 4px;
   }
 
   .feed-card {
