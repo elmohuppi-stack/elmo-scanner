@@ -43,15 +43,31 @@ const apiBase =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
   "";
-const legalName = import.meta.env.VITE_LEGAL_NAME || "Elmar Hepp";
-const legalEmail = import.meta.env.VITE_LEGAL_EMAIL || "elmar.hepp@gmail.com";
-const legalAddressLine1 =
-  import.meta.env.VITE_LEGAL_ADDRESS_LINE_1 || "Richard-Wagner-Str. 25";
-const legalAddressLine2 =
-  import.meta.env.VITE_LEGAL_ADDRESS_LINE_2 || "76744 Wörth am Rhein";
+// Betreiberangaben kommen aus der Umgebung, nie aus dem Quelltext: sonst liegt
+// eine ladungsfähige Anschrift in einem öffentlichen Repository. Fehlt ein
+// Pflichtfeld, steht ein sichtbarer Platzhalter auf der Seite statt einer
+// leeren Zeile — ein unvollständiges Impressum soll auffallen.
+// Die Zugriffe stehen einzeln und ausgeschrieben da: Vite ersetzt
+// `import.meta.env.VITE_X` beim Build statisch, ein dynamischer Schlüssel
+// (`import.meta.env[key]`) wird nicht ersetzt und wäre in Produktion leer.
+const legalRequired = (key, value) =>
+  value && String(value).trim() ? String(value).trim() : `[bitte ${key} setzen]`;
+
+const legalName = legalRequired("VITE_LEGAL_NAME", import.meta.env.VITE_LEGAL_NAME);
+const legalEmail = legalRequired("VITE_LEGAL_EMAIL", import.meta.env.VITE_LEGAL_EMAIL);
+const legalAddressLine1 = legalRequired(
+  "VITE_LEGAL_ADDRESS_LINE_1",
+  import.meta.env.VITE_LEGAL_ADDRESS_LINE_1,
+);
+const legalAddressLine2 = legalRequired(
+  "VITE_LEGAL_ADDRESS_LINE_2",
+  import.meta.env.VITE_LEGAL_ADDRESS_LINE_2,
+);
 const legalCountry = import.meta.env.VITE_LEGAL_COUNTRY || "Deutschland";
-const legalContentResponsible =
-  import.meta.env.VITE_LEGAL_CONTENT_RESPONSIBLE || legalName;
+const legalContentResponsible = legalRequired(
+  "VITE_LEGAL_CONTENT_RESPONSIBLE",
+  import.meta.env.VITE_LEGAL_CONTENT_RESPONSIBLE,
+);
 
 const feeds = ref([]);
 const feedItems = ref({});

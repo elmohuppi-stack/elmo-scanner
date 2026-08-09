@@ -1,0 +1,7 @@
+
+# Umgebung — enthält die Betreiberangaben (ladungsfähige Anschrift).
+# Gehört niemals ins Repository, die .example-Dateien zeigen die Struktur.
+.env
+.env.*
+!.env.example
+!.env.production.example
